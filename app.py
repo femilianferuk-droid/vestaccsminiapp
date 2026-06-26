@@ -31,8 +31,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ===== КОНФИГ =====
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8608742695:AAGlbLTlGniqZvwl9nE6IJBzj4UboWXN03A")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://bothost_db_d9dbd53f40eb:pa0bg7BK4-HmRor5Fpn3X58gh8kB_0a2OJMIle5kFSQ@node1.pghost.ru:15818/bothost_db_d9dbd53f40eb")
 if "+asyncpg" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("+asyncpg", "")
 SECRET_KEY = os.getenv("FLASK_SECRET", "change-me-in-prod")
