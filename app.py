@@ -942,7 +942,7 @@ _PHONE_PREFIX_COUNTRY = {
     "92": "Пакистан", "93": "Афганистан", "94": "Шри-Ланка",
     "95": "Мьянма", "98": "Иран", "211": "Южный Судан", "212": "Марокко",
     "213": "Алжир", "216": "Тунис", "218": "Ливия", "220": "Гамбия",
-    "221": "Сенегал", "222": "Мавритания", "223": "Мали", "224": "Гвинея",
+    "221": "Сенегал", "222": "��авритания", "223": "Мали", "224": "Гвинея",
     "225": "Кот-д'Ивуар", "226": "Буркина-Фасо", "227": "Нигер",
     "228": "Того", "229": "Бенин", "230": "Маврикий", "231": "Либерия",
     "232": "Сьерра-Леоне", "233": "Гана", "234": "Нигерия", "235": "Чад",
@@ -2678,6 +2678,36 @@ INDEX_HTML = r"""<!DOCTYPE html>
             font-size: 12px; color: var(--text-muted);
             text-align: center; padding: 6px 18px 0;
         }
+        .profile-listings-section { padding: 0 16px 28px; }
+        .profile-listings-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .profile-listings-title { font-size: 18px; font-weight: 800; color: var(--gray-900); }
+        .profile-listings-count { min-width: 28px; padding: 4px 9px; border-radius: 999px; background: var(--blue-100); color: var(--blue-700); font-size: 12px; font-weight: 800; text-align: center; }
+        .profile-listings-grid { display: flex; flex-direction: column; gap: 10px; }
+        .profile-listing-card { width: 100%; border: 1px solid var(--gray-100); border-radius: 18px; background: var(--surface); padding: 14px; text-align: left; box-shadow: var(--shadow-sm); color: var(--text); }
+        button.profile-listing-card { cursor: pointer; }
+        button.profile-listing-card:active { transform: scale(.985); }
+        .profile-listing-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .profile-listing-name { min-width: 0; font-size: 15px; line-height: 1.4; font-weight: 750; color: var(--gray-900); overflow-wrap: anywhere; }
+        .profile-listing-price { flex-shrink: 0; font-size: 17px; font-weight: 850; color: var(--blue-700); }
+        .profile-listing-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 9px; color: var(--text-muted); font-size: 12px; }
+        .profile-listing-status { padding: 4px 8px; border-radius: 999px; font-weight: 750; }
+        .profile-listing-status.active { background: #dcfce7; color: #15803d; }
+        .profile-listing-status.sold { background: #fee2e2; color: #b91c1c; }
+        .profile-listing-status.cancelled { background: var(--gray-100); color: var(--gray-700); }
+        .profile-listings-state { padding: 28px 14px; border: 1px dashed var(--gray-200); border-radius: 18px; color: var(--text-muted); text-align: center; font-size: 14px; }
+        .public-profile-hero { position: relative; padding: 28px 18px 22px; background: var(--surface); border-bottom: 1px solid var(--gray-100); }
+        .public-profile-main { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+        .public-profile-avatar { width: 82px; height: 82px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--blue-100); color: var(--blue-700); font-size: 30px; font-weight: 850; border: 4px solid var(--surface); box-shadow: var(--shadow); }
+        .public-profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+        .public-profile-name { margin-top: 5px; color: var(--gray-900); font-size: 22px; font-weight: 850; }
+        .public-profile-username, .public-profile-joined { color: var(--text-muted); font-size: 13px; }
+        .public-profile-content { padding: 14px 16px 28px; }
+        .public-profile-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+        .public-profile-stat { padding: 13px; border: 1px solid var(--gray-100); border-radius: 16px; background: var(--surface); }
+        .public-profile-stat span { display: block; color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+        .public-profile-stat b { display: block; margin-top: 3px; color: var(--gray-900); font-size: 18px; }
+        .public-profile-message { margin-bottom: 22px; }
+
         /* Делаем ник/аватар визуально «нажимаемыми» — но без подчёркивания,
            чтобы не ломать текущий дизайн карточек. Просто курсор + лёгкий
            ховер-эффект, который намекает: «это кликабельно». */
@@ -2718,7 +2748,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             background: linear-gradient(180deg, #f7f9ff 0%, #eef2fb 100%);
             display: flex; flex-direction: column; gap: 6px;
         }
-        /* При поллинге сообщений мы тоже пересоздаём DOM — а cardIn
+        /* При поллинге сообщений мы то��е пересоздаём DOM — а cardIn
            ниже «подпрыгивает» каждый раз. Класс .no-anim на контейнере
            отключает анимацию для всех дочерних .chat-bubble. */
         .chat-messages.no-anim .chat-bubble { animation: none; }
@@ -4358,6 +4388,49 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 <div class="action-arrow">›</div>
             </button>
         </div>
+
+        <section class="profile-listings-section" aria-labelledby="myProfileListingsTitle">
+            <div class="profile-listings-head">
+                <h2 class="profile-listings-title" id="myProfileListingsTitle">Мои объявления</h2>
+                <span class="profile-listings-count" id="profileListingsCount">0</span>
+            </div>
+            <div class="profile-listings-grid" id="profileListings">
+                <div class="profile-listings-state">Загружаем объявления…</div>
+            </div>
+        </section>
+    </div>
+
+    <!-- ====== Публичный профиль пользователя ====== -->
+    <div class="page" id="pageUserProfile">
+        <section class="public-profile-hero">
+            <button class="profile-back" id="userProfileBack" type="button" aria-label="Назад">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M15 5 L8 12 L15 19" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+            <div class="public-profile-main">
+                <div class="public-profile-avatar" id="userProfileAvatar"><span>?</span></div>
+                <h1 class="public-profile-name" id="userProfileName">Профиль</h1>
+                <div class="public-profile-username" id="userProfileUsername">Загрузка…</div>
+                <div class="public-profile-joined hidden" id="userProfileJoined"></div>
+            </div>
+        </section>
+        <div class="public-profile-content">
+            <div class="public-profile-stats" id="userProfileStats">
+                <div class="public-profile-stat"><span>Рейтинг</span><b id="userProfileRating">—</b></div>
+                <div class="public-profile-stat"><span>Отзывы</span><b id="userProfileReviews">—</b></div>
+            </div>
+            <button class="btn-primary public-profile-message hidden" id="userProfileMessageBtn" type="button">Написать сообщение</button>
+            <section aria-labelledby="userProfileListingsTitle">
+                <div class="profile-listings-head">
+                    <h2 class="profile-listings-title" id="userProfileListingsTitle">Объявления</h2>
+                    <span class="profile-listings-count" id="userProfileListingsCount">0</span>
+                </div>
+                <div class="profile-listings-grid" id="userProfileListings">
+                    <div class="profile-listings-state">Загружаем профиль…</div>
+                </div>
+            </section>
+        </div>
     </div>
 
     <!-- ====== Мои покупки (полноценная страница) ====== -->
@@ -4809,7 +4882,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             <div class="item-seller-row">
                 <div class="item-seller-avatar" id="itemSellerAvatar">👤</div>
                 <div class="item-seller-info">
-                    <!-- Сюда фронт рендерит «Имя Фамилия @username» одной строкой -->
+                    <!-- Сю��а фронт рендерит «Имя Фамилия @username» одной строкой -->
                     <div class="item-seller-name" id="itemSeller">Продавец</div>
                     <!-- Старый stack-handle спрятан: ник теперь идёт инлайном -->
                     <div class="item-seller-handle hidden" id="itemSellerHandle"></div>
@@ -5295,7 +5368,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             function switchPage(pageId, opts) {
                 opts = opts || {};
                 const prevPage = state.currentPage || null;
-                const pages = ['pageCatalog', 'pageProfile', 'pagePurchases', 'pageTopup', 'pageSell', 'pageChats'];
+                const pages = ['pageCatalog', 'pageProfile', 'pageUserProfile', 'pagePurchases', 'pageTopup', 'pageSell', 'pageChats'];
                 pages.forEach((p) => {
                     const el = document.getElementById(p);
                     if (!el) return;
@@ -5316,9 +5389,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 }
                 window.scrollTo({ top: 0, behavior: 'smooth' });
                 // при открытии профиля — обновим баланс
-                if (pageId === 'pageProfile' && opts.refreshBalance !== false) {
-                    refreshBalance({ silent: false });
-                }
+  if (pageId === 'pageProfile' && opts.refreshBalance !== false) {
+  refreshBalance({ silent: false });
+  loadProfileListings();
+  }
                 // при открытии «Мои покупки» — подтянем список
                 if (pageId === 'pagePurchases') {
                     loadPurchases();
@@ -5375,7 +5449,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             // Используется во всех местах: список чатов, заголовок модалки,
             // авто-открытие чата после покупки, превью в карточке диалога.
             function peerDisplay(c) {
-                if (!c) return 'Собеседник';
+                if (!c) return 'Собесе��ник';
                 if (c.peer_first_name) return c.peer_first_name;
                 if (c.peer_username) return '@' + c.peer_username;
                 return 'id ' + c.peer_id;
@@ -5605,7 +5679,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         </div>
                     `;
                     card.addEventListener('click', () => openChat(c));
-                    // ====== Клик по аватару/имени в списке чатов ======
+                    // ====== Клик по аватару/имени в спис��е чатов ======
                     // Открывает публичный профиль, а не диалог. Клик по
                     // превью или по пустому месту карточки — открывает чат,
                     // как и раньше.
@@ -7267,7 +7341,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
             function openItem(it) {
                 buyState.item = it;
-                // ====== Шапка модалки: название лота (как в карточке) ======
+                // ====== Шапк�� модалки: название лота (как в карточке) ======
                 // Раньше в шапке модалки дублировалась страна с флагом.
                 // Теперь показываем название лота (listing.title), флаг убран.
                 if (dom.itemFlag) dom.itemFlag.style.display = 'none';
@@ -7675,7 +7749,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             */
             let _userProfileLoading = false;
             let _userProfileCurrentId = 0;
-            async function openUserProfile(telegramId, opts) {
+            async function openUserProfileModalLegacy(telegramId, opts) {
                 telegramId = Number(telegramId || 0);
                 if (!telegramId) return;
                 opts = opts || {};
@@ -7798,6 +7872,120 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 }
             }
 
+            function renderProfileListingCards(container, items, showStatus) {
+                if (!container) return;
+                if (!items.length) {
+                    container.innerHTML = '<div class="profile-listings-state">У пользователя пока нет объявлений</div>';
+                    return;
+                }
+                const labels = { active: 'Активно', sold: 'Продано', cancelled: 'Снято' };
+                container.innerHTML = '';
+                items.forEach((it) => {
+                    const status = it.status || 'active';
+                    const interactive = status === 'active';
+                    const card = document.createElement(interactive ? 'button' : 'article');
+                    card.className = 'profile-listing-card';
+                    if (interactive) card.type = 'button';
+                    const meta = [it.country, it.origin_label || it.origin].filter(Boolean);
+                    card.innerHTML =
+                        '<div class="profile-listing-row">' +
+                            '<div class="profile-listing-name">' + escapeHtml(it.title || 'Telegram-аккаунт') + '</div>' +
+                            '<div class="profile-listing-price">' + formatPrice(it.price || 0) + ' ₽</div>' +
+                        '</div>' +
+                        '<div class="profile-listing-meta">' +
+                            (showStatus ? '<span class="profile-listing-status ' + escapeHtml(status) + '">' + escapeHtml(labels[status] || status) + '</span>' : '') +
+                            meta.map((value) => '<span>' + escapeHtml(value) + '</span>').join('') +
+                        '</div>';
+                    if (interactive) card.addEventListener('click', () => openItem(it));
+                    container.appendChild(card);
+                });
+            }
+
+            async function loadProfileListings() {
+                const wrap = $('profileListings');
+                const count = $('profileListingsCount');
+                if (!wrap) return;
+                wrap.innerHTML = '<div class="profile-listings-state">Загружаем объявления…</div>';
+                try {
+                    const r = await api('/api/my_listings');
+                    if (!r.ok) throw new Error('load_failed');
+                    const me = state.tgUser || {};
+                    const originIcons = { 'Авторег': '🤖', 'Саморег': '👤', 'Фишинг': '🎣', 'Стиллер': '🕵️' };
+                    const items = (r.data.items || []).map((it) => ({
+                        ...it,
+                        origin_label: it.origin || 'Не указано',
+                        origin_icon: originIcons[it.origin] || '•',
+                        seller_id: Number(me.id || 0),
+                        seller_username: me.username || '',
+                        seller_full_name: [me.first_name, me.last_name].filter(Boolean).join(' '),
+                    }));
+                    if (count) count.textContent = String(items.length);
+                    renderProfileListingCards(wrap, items, true);
+                } catch (e) {
+                    if (count) count.textContent = '0';
+                    wrap.innerHTML = '<div class="profile-listings-state">Не удалось загрузить объявления</div>';
+                }
+            }
+
+            let _userProfileReturnPage = 'pageCatalog';
+            async function openUserProfile(telegramId, opts) {
+                telegramId = Number(telegramId || 0);
+                if (!telegramId) return;
+                const myId = Number((state.tgUser && state.tgUser.id) || 0);
+                if (telegramId === myId) {
+                    openProfile();
+                    return;
+                }
+                opts = opts || {};
+                _userProfileReturnPage = state.currentPage && state.currentPage !== 'pageUserProfile'
+                    ? state.currentPage : 'pageCatalog';
+                const pre = opts.preload || {};
+                const initialName = pre.name || (pre.username ? '@' + pre.username : 'Профиль');
+                const initial = (String(initialName).replace(/^[@\s]+/, '').charAt(0) || '?').toUpperCase();
+                $('userProfileName').textContent = initialName;
+                $('userProfileUsername').textContent = pre.username ? '@' + pre.username : 'Загрузка…';
+                $('userProfileAvatar').innerHTML = pre.photo_url
+                    ? '<img src="' + escapeHtml(pre.photo_url) + '" alt="Аватар пользователя">'
+                    : '<span>' + escapeHtml(initial) + '</span>';
+                $('userProfileJoined').classList.add('hidden');
+                $('userProfileRating').textContent = '—';
+                $('userProfileReviews').textContent = '—';
+                $('userProfileMessageBtn').classList.add('hidden');
+                $('userProfileListingsCount').textContent = '0';
+                $('userProfileListings').innerHTML = '<div class="profile-listings-state">Загружаем профиль…</div>';
+                switchPage('pageUserProfile');
+                try {
+                    const r = await api('/api/user/' + encodeURIComponent(telegramId) + '/public');
+                    if (!r.ok) throw new Error((r.data && r.data.error) || 'load_failed');
+                    const u = r.data.user || {};
+                    if (u.is_self) { openProfile(); return; }
+                    const fullName = ((u.first_name || '') + (u.last_name ? ' ' + u.last_name : '')).trim();
+                    const displayName = fullName || (u.username ? '@' + u.username : 'Пользователь');
+                    const freshInitial = (displayName.replace(/^[@\s]+/, '').charAt(0) || '?').toUpperCase();
+                    $('userProfileName').textContent = displayName;
+                    $('userProfileUsername').textContent = u.username ? '@' + u.username : 'telegram id ' + telegramId;
+                    $('userProfileAvatar').innerHTML = u.photo_url
+                        ? '<img src="' + escapeHtml(u.photo_url) + '" alt="Аватар ' + escapeHtml(displayName) + '">'
+                        : '<span>' + escapeHtml(freshInitial) + '</span>';
+                    $('userProfileRating').textContent = (Number(u.rating) || 0).toFixed(1) + ' ★';
+                    $('userProfileReviews').textContent = String(u.reviews_count || 0);
+                    if (u.created_at) {
+                        $('userProfileJoined').textContent = 'На платформе с ' + formatRegDate(u.created_at);
+                        $('userProfileJoined').classList.remove('hidden');
+                    }
+                    const messageBtn = $('userProfileMessageBtn');
+                    messageBtn.dataset.peerId = String(telegramId);
+                    messageBtn.dataset.peerUsername = u.username || '';
+                    messageBtn.classList.remove('hidden');
+                    const listings = r.data.listings || [];
+                    $('userProfileListingsCount').textContent = String(listings.length);
+                    renderProfileListingCards($('userProfileListings'), listings, false);
+                } catch (e) {
+                    $('userProfileUsername').textContent = 'Профиль недоступен';
+                    $('userProfileListings').innerHTML = '<div class="profile-listings-state">Не удалось загрузить профиль</div>';
+                }
+            }
+
             // Вспомогательное: «март 2024» из ISO-даты.
             function formatRegDate(iso) {
                 try {
@@ -7879,7 +8067,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 return map[err] || ('❌ ' + err);
             }
 
-            /* ===== Активация промокода прямо из профиля (общая БД с ботом) ===== */
+            /* ===== Активация промокод�� прямо из профиля (общая БД с ботом) ===== */
             /* (Промокод со страницы пополнения убран — остаётся только в профиле) */
             async function activatePromoFromProfile() {
                 const code = (dom.profilePromoInput.value || '').trim().toUpperCase();
@@ -8388,6 +8576,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     });
                 }
 
+                const userProfileBack = document.getElementById('userProfileBack');
+                if (userProfileBack) {
+                    userProfileBack.addEventListener('click', () => switchPage(_userProfileReturnPage || 'pageCatalog'));
+                }
+                const userProfileMessageBtn = document.getElementById('userProfileMessageBtn');
+                if (userProfileMessageBtn) {
+                    userProfileMessageBtn.addEventListener('click', () => {
+                        const pid = Number(userProfileMessageBtn.dataset.peerId || 0);
+                        if (!pid) return;
+                        openChatByPeerId(pid, { username: userProfileMessageBtn.dataset.peerUsername || '' });
+                    });
+                }
+
                 // ====== Кнопки в модалке профиля чужого юзера ======
                 //  — «Написать сообщение» — открывает/создаёт чат с этим юзером
                 //  — «Это вы — открыть свой профиль» — переключает на pageProfile
@@ -8426,6 +8627,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 if (tg && tg.BackButton) {
                     tg.BackButton.onClick(() => {
                         if (state.currentPage === 'pageTopup') switchPage('pageProfile');
+                        else if (state.currentPage === 'pageUserProfile') switchPage(_userProfileReturnPage || 'pageCatalog');
                         else if (state.currentPage === 'pageProfile') switchPage('pageCatalog');
                         else if (state.currentPage === 'pageSell') switchPage('pageCatalog');
                         else if (state.currentPage === 'pagePurchases') switchPage('pageCatalog');
@@ -8723,7 +8925,7 @@ def api_purchase_review_status(telegram_id, tg_user, purchase_id):
       - exists: True, если отзыв уже оставлен (вручную или авто)
       - rating, comment, created_at, is_auto — поля существующего отзыва
       - can_review: True, если покупатель ещё МОЖЕТ оставить отзыв
-        (покупка его, отзыва ещё нет, прошло < REVIEW_AUTO_POST_DAYS дней)
+        (покупка его, отзыва ещё нет, прошло < REVIEW_AUTO_POST_DAYS дн��й)
       - days_left: сколько целых дней осталось до авто-отзыва
         (None, если отзыв уже есть или время вышло)
       - auto_in_review: True, если время вышло и авто-отзыв уже должен
@@ -9412,7 +9614,7 @@ def api_buy(telegram_id, tg_user):
     # Флаг для блока except — была ли IntegrityError
     integrity_failure = {"detail": None}
     try:
-        # Блокируем аккаунт (FOR UPDATE), чтобы при гонках один и тот же
+        # Блокируем аккаунт (FOR UPDATE), чтобы при ��онках один и тот же
         # аккаунт не купили дважды. Блокировка живёт до COMMIT/ROLLBACK.
         account = session.execute(
             select(Account).where(Account.id == account_id)
@@ -9918,6 +10120,62 @@ def api_user_public(user_telegram_id, telegram_id, tg_user):
             photo_url = _get_telegram_photo_url(int(u.telegram_id))
         except Exception:
             photo_url = None
+        public_listings = session.execute(
+            select(Listing, Account)
+            .join(Account, Account.id == Listing.account_id)
+            .where(
+                Listing.seller_id == user_telegram_id,
+                Listing.status == "active",
+                Account.is_sold.is_(False),
+            )
+            .order_by(Listing.created_at.desc())
+            .limit(50)
+        ).all()
+        seller_full_name = " ".join(filter(None, [
+            getattr(u, "first_name", None),
+            getattr(u, "last_name", None),
+        ])).strip()
+        listings_payload = []
+        month_names = {
+            1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
+            5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
+            9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
+        }
+        for listing, account in public_listings:
+            reg_parts = []
+            if account.reg_month in month_names:
+                reg_parts.append(month_names[account.reg_month])
+            if account.reg_year:
+                reg_parts.append(str(account.reg_year))
+            reg_text = ("Регистрация: " + " ".join(reg_parts)) if reg_parts else ""
+            origin_key = listing.origin or account.origin or "Авторег"
+            origin_icon, origin_label = ORIGIN_LABELS.get(origin_key, ("•", origin_key))
+            listings_payload.append({
+                "id": int(listing.id),
+                "title": listing.title or "Telegram-аккаунт",
+                "description": build_listing_description(
+                    listing.description or "", account.reg_month, account.reg_year
+                ) or "",
+                "price": float(listing.price or 0),
+                "origin": origin_key,
+                "origin_label": origin_label,
+                "origin_icon": origin_icon,
+                "country": listing.country or account.country or "",
+                "flag": COUNTRY_FLAGS.get(listing.country or account.country or "", ""),
+                "status": "active",
+                "created_at": listing.created_at.isoformat() if listing.created_at else None,
+                "is_verified": bool(account.is_verified),
+                "has_premium": bool(account.has_premium),
+                "reg_month": account.reg_month,
+                "reg_year": account.reg_year,
+                "reg_text": reg_text or "",
+                "seller_id": int(u.telegram_id),
+                "seller_username": u.username,
+                "seller_full_name": seller_full_name,
+                "seller_photo_url": photo_url,
+                "seller_rating": float(u.rating or 5.0),
+                "seller_reviews": int(u.reviews_count or 0),
+            })
         return jsonify({
             "ok": True,
             "user": {
@@ -9932,6 +10190,7 @@ def api_user_public(user_telegram_id, telegram_id, tg_user):
                 "created_at": u.created_at.isoformat() if u.created_at else None,
                 "is_self": int(u.telegram_id) == int(telegram_id),
             },
+            "listings": listings_payload,
         })
     finally:
         session.close()
