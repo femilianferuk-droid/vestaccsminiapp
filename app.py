@@ -738,7 +738,7 @@ def format_reg_info(reg_month, reg_year) -> str:
     return f"Регистрация: {y} г."
 
 
-def build_listing_description(raw_description: str | None, reg_month, reg_year) -> str | None:
+def build_listing_description(raw_description: Optional[str], reg_month, reg_year) -> Optional[str]:
     """Возвращает ТОЛЬКО свободный текст продавца (без даты регистрации).
 
     История: раньше функция склеивала «Регистрация: Июль 2021» и
@@ -758,7 +758,7 @@ def build_listing_description(raw_description: str | None, reg_month, reg_year) 
     return None
 
 
-def get_bot_username() -> str | None:
+def get_bot_username() -> Optional[str]:
     """Возвращает username бота через Telegram getMe API. Кешируется на час."""
     now = datetime.now().timestamp()
     if _BOT_USERNAME_CACHE["username"] and (now - _BOT_USERNAME_CACHE["ts"]) < _BOT_INFO_TTL:
@@ -942,7 +942,7 @@ MAX_LISTING_PRICE = 50000.0 # максимальная цена
 # phone_code_hash и черновик объявления до прохождения кода/2FA.
 _SELL_PENDING: dict = {}
 
-# Страны по телефонным кодам (как в bot.py, чтобы мини-апп и бот
+# Страны по телефонным кодам (как в bot.py, ��тобы мини-апп и бот
 # определяли страну одинаково). Полный список ниже; здесь — самые
 # распространённые префиксы.
 _PHONE_PREFIX_COUNTRY = {
@@ -1206,7 +1206,7 @@ def api_sell_account_session(telegram_id, tg_user):
     if price < MIN_LISTING_PRICE or price > MAX_LISTING_PRICE:
         return jsonify({"ok": False, "error": "bad_price",
                         "detail": f"Цена от {MIN_LISTING_PRICE:.0f} до {MAX_LISTING_PRICE:.0f}₽"}), 400
-    if origin not in ("Авторег", "Саморег", "Фишинг", "Стиллер", None):
+    if origin not in ("Авторег", "Саморег", "Фиши��г", "Стиллер", None):
         return jsonify({"ok": False, "error": "bad_origin"}), 400
 
     # ===== Месяц и год регистрации Telegram-аккаунта =====
@@ -5391,7 +5391,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         </div>
     </div>
 
-    <!-- ====== Модалка диалога с пользователем ====== -->
+    <!-- ====== Модалка диалога с польз��вателем ====== -->
     <div class="modal hidden" id="chatModal">
         <div class="modal-backdrop" data-close="chatModal"></div>
         <div class="modal-sheet chat-sheet">
@@ -6124,7 +6124,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 if (card) card.classList.add('loading');
                 try {
                     // Передаём initData в query — send_file не получает заголовки
-                    // от <a download>, поэтому кладём подпись в URL.
+                    // от <a download>, поэтому к��адём подпись в URL.
                     const url = `/api/purchases/${purchaseId}/${kind}` +
                         (state.initData
                             ? `?initData=${encodeURIComponent(state.initData)}`
@@ -7447,7 +7447,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 if (secFile)  secFile.style.display  = mode === 'file'  ? '' : 'none';
 
                 if (resetFileState) {
-                    // Сброс состояния файловой зоны при переключении
+                    // Сброс состояния файло��ой зоны при переключении
                     sellState.sessionFile = null;
                     const fileInput = document.getElementById('sellFileInput');
                     if (fileInput) fileInput.value = '';
@@ -8227,7 +8227,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     // не вшитыми в описание) ======
                     // В карточке показываем два маленьких тега: сессия
                     // верифицирована + дата регистрации (если есть).
-                    // Флаг страны убран из шапки; страна теперь — отдельный бейдж.
+                    // Флаг страны убран из шапки; страна теперь — отдельный бей��ж.
                     // По просьбе: дата регистрации — как отдельная плашка
                     // рядом с «Сессия проверена», НЕ в описании.
                     const metaBadges = [];
@@ -8797,7 +8797,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     if (r.data.valid) {
                         // Аккаунт валидный — показываем кнопку подтверждения
                         validateState.status = 'valid';
-                        showValidateStatus('valid', 'Аккаунт проверен — всё в порядке. Подтвердите покупку.');
+                        showValidateStatus('valid', 'Аккаунт проверен — всё в порядке. Подтверд��те покупку.');
                         if (dom.buyBtn) {
                             dom.buyBtn.disabled = true;
                             dom.buyBtn.classList.remove('loading');
@@ -8965,7 +8965,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         const sellerId = r.data && r.data.seller_id;
                         const threadId = r.data && r.data.chat_thread_id;
                         if (sellerId && threadId && typeof openChatByPeerId === 'function') {
-                            // Подтянем свежий список чатов, чтобы получить
+                            // По��тянем свежий список чатов, чтобы получить
                             // имя/username продавца (а потом сразу откроем чат).
                             setTimeout(async () => {
                                 try { await pollChats(); } catch (e) { /* noop */ }
@@ -9090,7 +9090,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 if ($('userModalUsername')) {
                     $('userModalUsername').textContent = (pre && pre.username)
                         ? '@' + pre.username
-                        : (isSelf ? 'это вы' : 'telegram');
+                        : (isSelf ? 'это ��ы' : 'telegram');
                 }
                 if ($('userModalAvatar')) {
                     // Если в прелоаде есть фото — сразу покажем
@@ -9651,7 +9651,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
             /* ===== Bind events ===== */
             function bindEvents() {
-                // Кнопка «Фильтры» — открывает модалку с гридами стран/происхождения/цены
+                // Кнопка «Фильтры» — открывае�� модалку с гридами стран/происхождения/цены
                 if (dom.openFilters) {
                     dom.openFilters.addEventListener('click', openFiltersModal);
                 }
@@ -10250,7 +10250,7 @@ def api_purchases(telegram_id, tg_user):
 @app.route("/api/purchases/<int:purchase_id>/review", methods=["GET"])
 @require_auth
 def api_purchase_review_status(telegram_id, tg_user, purchase_id):
-    """Статус отзыва по конкретной покупке.
+    """Статус отзыва по конкретной ��окупке.
 
     Возвращает:
       - exists: True, если отзыв уже оставлен (вручную или авто)
@@ -12032,7 +12032,7 @@ def _start_hold_releaser_once():
 # Зачем: покупатель получил аккаунт, всё ок — но отзыв не оставил.
 # Через REVIEW_AUTO_POST_DAYS дней фоновый планировщик выставляет
 # автоматический 5★-отзыв от его лица, пересчитывает рейтинг продавца
-# и пишет в чат системное сообщение «Отзыв выставлен автоматически».
+# �� пишет в чат системное сообщение «Отзыв выставлен автоматически».
 #
 # Безопасность:
 #   - Берём только Purchase �� которых created_at <= NOW() - REVIEW_AUTO_POST_DAYS
