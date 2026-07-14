@@ -791,7 +791,9 @@ def validate_init_data(init_data: str):
         if not received_hash:
             return None
         data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
-        secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+        # Алгоритм Telegram: HMAC-SHA256(key=BOT_TOKEN, msg=b"WebAppData")
+        # hmac.new(key, msg, digestmod) — key первый, msg второй.
+        secret_key = hmac.new(BOT_TOKEN.encode(), b"WebAppData", hashlib.sha256).digest()
         computed_hash = hmac.new(
             secret_key, data_check_string.encode(), hashlib.sha256
         ).hexdigest()
@@ -847,7 +849,7 @@ def require_auth(f):
 CODE_KEYWORDS = [
     "telegram", "код", "code", "login", "verify", "подтверждени",
     "авторизаци", "вход", "42777", "служебны", "service",
-    "верификаци", "verification",
+    "верифика��и", "verification",
 ]
 
 
@@ -5391,7 +5393,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         </div>
     </div>
 
-    <!-- ====== Модалка диалога с пользователем ====== -->
+    <!-- ====== Модалка диалога с польз��вателем ====== -->
     <div class="modal hidden" id="chatModal">
         <div class="modal-backdrop" data-close="chatModal"></div>
         <div class="modal-sheet chat-sheet">
@@ -7447,7 +7449,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 if (secFile)  secFile.style.display  = mode === 'file'  ? '' : 'none';
 
                 if (resetFileState) {
-                    // Сброс состояния файловой зоны при переключении
+                    // Сброс состояния файло��ой зоны при переключении
                     sellState.sessionFile = null;
                     const fileInput = document.getElementById('sellFileInput');
                     if (fileInput) fileInput.value = '';
@@ -8227,7 +8229,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     // не вшитыми в описание) ======
                     // В карточке показываем два маленьких тега: сессия
                     // верифицирована + дата регистрации (если есть).
-                    // Флаг страны убран из шапки; страна теперь — отдельный бейдж.
+                    // Флаг страны убран из шапки; страна теперь — отдельный бей��ж.
                     // По просьбе: дата регистрации — как отдельная плашка
                     // рядом с «Сессия проверена», НЕ в описании.
                     const metaBadges = [];
@@ -8666,7 +8668,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     );
 
                     // Лид-абзац: приоритет — текст продавца, иначе собираем
-                    // живой дефолт. Используем название лота, чтобы текст
+                    // ж��вой дефолт. Используем название лота, чтобы текст
                     // звучал конкретно, а не шаблонно.
                     let leadHtml;
                     if (rawDesc) {
@@ -8965,7 +8967,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         const sellerId = r.data && r.data.seller_id;
                         const threadId = r.data && r.data.chat_thread_id;
                         if (sellerId && threadId && typeof openChatByPeerId === 'function') {
-                            // Подтянем свежий список чатов, чтобы получить
+                            // По��тянем свежий список чатов, чтобы получить
                             // имя/username продавца (а потом сразу откроем чат).
                             setTimeout(async () => {
                                 try { await pollChats(); } catch (e) { /* noop */ }
@@ -10970,7 +10972,7 @@ def _validate_account(session_string: str) -> dict:
 @app.route("/api/validate_account", methods=["POST"])
 @require_auth
 def api_validate_account(telegram_id, tg_user):
-    """Проверяет валидность аккаунта перед покупкой.
+    """Проверяет вал��дность аккаунта перед покупкой.
 
     Принимает JSON: {"account_id": <int>}
     Если аккаунт невалиден — снимает объявление с продажи (listing.status='cancelled').
@@ -11423,7 +11425,7 @@ def api_categories():
 def api_chats_list(telegram_id, tg_user):
     """Список чатов текущего пользователя.
 
-    Возвращает диалоги, где он — участник (user1_id ИЛИ user2_id),
+    Возвращает диалоги, где он — у��астник (user1_id ИЛИ user2_id),
     с превью последнего сообщения, ником собеседника и счётчиком непрочитанных.
     Сортировка — свежие сверху (по last_message_at).
     """
@@ -11863,7 +11865,7 @@ def api_bot_avatar():
 # ===== ХЕЛПЕР: ВСТАВИТЬ СООБЩЕНИЕ ОТ «VEST ACCOUNT» В ЧАТ =====
 def _insert_bot_message(session, thread_id: int, text: str, purchase_id: int = None) -> int:
     """Создаёт запись ChatMessage от имени бота (sender_id = BOT_SENDER_ID)
-    в указанном thread-е и обновляет last_message_at потока.
+    в ука��анном thread-е и обновляет last_message_at потока.
 
     Возвращает id созданного сообщения.
     """
