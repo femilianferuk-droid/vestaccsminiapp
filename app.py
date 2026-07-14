@@ -4265,7 +4265,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
         </header>
 
         <section class="hero">
-            <span class="hero-brand"><span class="dot"></span>Vest Account</span>
             <h1 class="hero-title">Маркетплейс<br><span>аккаунтов</span></h1>
             <p class="hero-sub">Проверенные сессии · моментальная выдача · поддержка 24/7</p>
         </section>
@@ -7425,6 +7424,23 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     }
                 }
 
+                const openSellerProfileFromItem = (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const sellerId = Number(it.seller_id || 0);
+                    if (!sellerId) return;
+                    closeModal('itemModal');
+                    openUserProfile(sellerId, {
+                        preload: {
+                            name: sellerName,
+                            username: it.seller_username || '',
+                            photo_url: it.seller_photo_url || null,
+                        },
+                    });
+                };
+                if (avatarEl) avatarEl.onclick = openSellerProfileFromItem;
+                if (dom.itemSeller) dom.itemSeller.onclick = openSellerProfileFromItem;
+
                 const rating = Number(it.seller_rating);
                 const reviews = Number(it.seller_reviews) || 0;
                 if (dom.itemRating) {
@@ -8037,7 +8053,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             }
 
             // Прямой переход в бота по ссылке (для кнопок «Пополнить» и «Открыть бота»).
-            // Закрываем мини-апп сразу после открытия deep-link, чтобы юзер
+            // Закрываем мини-апп ср��зу после открытия deep-link, чтобы юзер
             // оказался в боте на экране пополнения, а не возвращался назад в апп.
             function openBotDirect(startArg) {
                 const u = state.botUsername || 'testvestaccs_bot';
@@ -8155,7 +8171,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             };
 
             function paintReviewStars(value) {
-                // value — 1..5. Красим «до N» жёлтым.
+                // value — 1..5. Красим «до N» жёлт��м.
                 const wrap = dom.reviewStars;
                 if (!wrap) return;
                 const stars = wrap.querySelectorAll('.review-star');
