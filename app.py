@@ -44,6 +44,7 @@ from sqlalchemy import (
     BigInteger, Boolean, Column, DateTime, Float, Integer, String, Text,
     create_engine, func, select, text,
 )
+from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
 from sqlalchemy.exc import IntegrityError
 from dotenv import load_dotenv
@@ -309,7 +310,7 @@ class Purchase(Base):
 # Эти таблицы создаёт и пишет бот, но модели здесь нужны, чтобы:
 #  1) Base.metadata совпадал со схемой бота (нет расхождений при будущих миграциях);
 #  2) любые join / cross-table запросы из мини-аппа могли использовать ORM;
-#  3) мини-апп случайно не уронил данные, если кто-то добавит сюда feature.
+#  3) мини-апп случайно не уронил данные, если кто-то добав��т сюда feature.
 # Имена таблиц и колонок СТРОГО как в bot.py — никаких отсебятин.
 
 
@@ -422,18 +423,15 @@ class ChatMessage(Base):
 # синхронный connect к недоступной БД блокировал отдачу HTML и выглядел как
 # бесконечная загрузка как в Telegram WebView, так и в обычном браузере.
 _db_url = DATABASE_URL or "sqlite:////tmp/vest-account-fallback.db"
-_engine_options = {"pool_pre_ping": True}
+# На Vercel serverless каждый инстанс живёт секунды и НЕ должен держать
+# открытый пул соединений — это ведёт к "too many connections" и подвисаниям.
+# NullPool: каждый запрос открывает соединение и сразу закрывает после session.close().
+_engine_options: dict = {"poolclass": NullPool}
 if _db_url.startswith("postgresql"):
-    # psycopg2 игнорирует sslmode в connect_args — нужно прокидывать в URL.
-    # Добавляем ?sslmode=disable только если параметр ещё не задан в URL.
+    # psycopg2 игнорирует sslmode в connect_args — прокидываем в URL.
     if "sslmode=" not in _db_url:
         _db_url += ("&" if "?" in _db_url else "?") + "sslmode=disable"
-    _engine_options.update({
-        "pool_size": 5,
-        "max_overflow": 10,
-        "pool_timeout": 5,
-        "connect_args": {"connect_timeout": 5},
-    })
+    _engine_options["connect_args"] = {"connect_timeout": 5}
 engine = create_engine(_db_url, **_engine_options)
 SessionLocal = scoped_session(sessionmaker(bind=engine, expire_on_commit=False))
 
@@ -1027,7 +1025,7 @@ def _detect_country_by_phone(phone: str) -> str:
         return "Казахстан"
     if digits.startswith("7"):
         return "Россия"
-    # Остальные страны по коду (по убыванию длины, чтобы не срезать 1 на 7)
+    # Остальные страны по коду (п�� убыванию длины, чтобы не срезать 1 на 7)
     for code in sorted(_PHONE_PREFIX_COUNTRY.keys(), key=len, reverse=True):
         if digits.startswith(code):
             return _PHONE_PREFIX_COUNTRY[code]
@@ -1814,7 +1812,7 @@ async def _check_spam_bot_async(session_string: str) -> dict:
         # "Ограничений нет" / "no limits" / "Good news" — нет блока
         spam_keywords = [
             "ограничения", "ограничен", "spam", "limited",
-            "no good news", "нет хороших", "хороших новостей нет",
+            "no good news", "нет х��роших", "хороших новостей нет",
             "you are limited", "действуют ограничения",
         ]
         clean_keywords = [
@@ -2472,7 +2470,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             font-weight: 600;
         }
         /* ====== TELEGRAM PREMIUM BADGE ======
-           Зелёный бейдж «Телеграмм премиум» на карточке каталога.
+           Зел��ный бейдж «Телеграмм премиум» на карточке каталога.
            Рисуется в правом верхнем углу .card, чтобы не толкать
            остальной контент. Не пересекается с .card-flag за счёт
            right/top-якорения и z-index над :after-псевдо. */
@@ -6991,7 +6989,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         body: JSON.stringify({ peer_id: peerId }),
                     });
                 } catch (e) { /* noop — send тоже создаст */ }
-                // Берём имя/username собеседника из открытых чатов, если он там есть —
+                // Берём имя/username собе��едника из открытых чатов, если он там есть —
                 // иначе fallback на то, что передали в peerMeta.
                 const known = (chatsState.items || []).find(x => Number(x.peer_id) === peerId);
                 const peerObj = {
@@ -7154,7 +7152,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             */
             const sellState = {
                 origin: null,             // Авторег | Саморег | Фишинг | Стиллер
-                phoneSent: false,         // код уже отправлен на телефон?
+                phoneSent: false,         // код уже отправлен на телефо��?
                 needs2fa: false,          // нужен ли 2FA после кода?
                 busy: false,
                 step: 1,                  // 1 — параметры, 2 — телефон/код/файл
@@ -7599,7 +7597,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 loadMyListings();
             }
 
-            // Обновляет spam-бейдж в конкретной карточке объявления
+            // Обновляет spam-бейдж в конкретной карточк�� объявления
             function _setSpamBadgeInCard(listingId, status, label) {
                 const card = document.querySelector('[data-listing-id="' + listingId + '"]');
                 if (!card) return;
@@ -8232,7 +8230,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     const sellerInitial = (initialSrc.replace('@', '').replace('id ', '') || '?').charAt(0).toUpperCase();
                     const sRating = Number(it.seller_rating) || 0;
                     const sReviews = Number(it.seller_reviews) || 0;
-                    // ====== Аватарка продавца ======
+                    // ====== ��ватарка продавца ======
                     // Если пришла seller_photo_url — рендерим <img>, иначе
                     // фоллбек с первой буквой имени.
                     const avatarHtml = it.seller_photo_url
@@ -9241,7 +9239,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     const r = await api('/api/my_listings');
                     if (!r.ok) throw new Error('load_failed');
                     const me = state.tgUser || {};
-                    const originIcons = { 'Авторег': '🤖', 'Саморег': '👤', 'Фишинг': '🎣', 'Стиллер': '🕵️' };
+                    const originIcons = { 'Авторег': '🤖', 'Саморег': '👤', 'Фишинг': '🎣', 'С��иллер': '🕵️' };
                     const items = (r.data.items || []).map((it) => ({
                         ...it,
                         origin_label: it.origin || 'Не указано',
@@ -9640,7 +9638,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         } else if (err === 'purchase_not_found') {
                             human = 'Покупка не найдена';
                         } else {
-                            human = 'Не удалось отправить отзыв';
+                            human = 'Не удалось отп��авить отзыв';
                         }
                         if (dom.reviewMsg) {
                             dom.reviewMsg.textContent = human;
@@ -10105,7 +10103,7 @@ def api_auth():
             # Автосоздание юзера при первом входе.
             # В схеме bot.py нет колонок last_name / photo_url,
             # поэтому last_name добавили миграцией. first_name и
-            # last_name — чтобы карточка товара показывала ПОЛНОЕ имя
+            # last_name — чтобы карточка товара показы��ала ПОЛНОЕ имя
             # продавца, а не только first_name.
             db_user = User(
                 telegram_id=tg_id,
@@ -10873,13 +10871,11 @@ def api_catalog():
             # карточке объявления. reg_month / reg_year лежат на Account
             # (там они и сохраняются).
             raw_desc = listing.description if listing and listing.description else None
-            # Аватарка продавца — реальная, из Telegram (через Bot API),
-            # с кешированием на 6 часов. Если продавца нет / нет фото —
-            # фронт нарисует фоллбек с первой буквой имени.
-            try:
-                seller_photo_url = _get_telegram_photo_url(int(a.seller_id)) if a.seller_id else None
-            except Exception:
-                seller_photo_url = None
+            # Аватарка продавца НЕ запрашивается здесь синхронно через Bot API —
+            # иначе каждый запрос к каталогу блокируется на N*2 HTTP-запросов
+            # (getUserProfilePhotos + getFile) для каждого аккаунта в списке.
+            # Фронт загружает аватарки лениво через /api/user/<id>/avatar.
+            seller_photo_url = None
             items.append({
                 "id": a.id,
                 "country": a.country,
@@ -11125,7 +11121,7 @@ def api_buy(telegram_id, tg_user):
         # если User ещё нет — блокировки нет, и при гонке двух запросов
         # (например, юзер быстро жмёт «Купить» дважды, или фронт
         # ретраит) обе транзакции проходят select→None и обе пытаются
-        # INSERT. Одна из них получает UNIQUE (users.telegram_id) →
+        # INSERT. Одна из них ��олучает UNIQUE (users.telegram_id) →
         # IntegrityError → ложный "already_sold".
         #
         # Решение: UPSERT через ON CONFLICT DO NOTHING. Если User уже
@@ -12017,7 +12013,7 @@ def _release_due_holds_sync() -> int:
 
 
 def _hold_releaser_loop():
-    """Фоновый поток: раз в HOLD_RELEASE_CHECK_INTERVAL секунд зовёт
+    """Фо��овый поток: раз в HOLD_RELEASE_CHECK_INTERVAL секунд зовёт
     _release_due_holds_sync(). Daemon=True — не блокируем выключение."""
     while True:
         try:
