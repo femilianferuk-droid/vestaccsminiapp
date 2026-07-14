@@ -114,25 +114,20 @@ def _run_async(coro, timeout: Optional[float] = None):
 # ===== КОНФИГ =====
 # Telethon API — ТЕ ЖЕ значения, что и в bot.py (vestaccpunt),
 # чтобы сессия из бота валидировалась в мини-аппе без расхождений.
-API_ID = 32480523
-API_HASH = "147839735c9fa4e83451209e9b55cfc5"
-
-BOT_TOKEN = os.getenv(
-    "BOT_TOKEN",
-    "8608742695:AAFC8Ea7U7Y23wMM4FCTzu5YPM0AXbYIoZ8",
-)
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://bothost_db_d9dbd53f40eb:pa0bg7BK4-HmRor5Fpn3X58gh8kB_0a2OJMIle5kFSQ@node1.pghost.ru:15818/bothost_db_d9dbd53f40eb",
-)
+API_ID = int(os.getenv("TELEGRAM_API_ID", "32480523"))
+API_HASH = os.getenv("TELEGRAM_API_HASH", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 if "+asyncpg" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("+asyncpg", "")
-SECRET_KEY = os.getenv("FLASK_SECRET", "change-me-in-prod")
+SECRET_KEY = os.getenv("FLASK_SECRET", os.urandom(32).hex())
 
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN is not set in .env")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not set in .env")
+    app_config_error = "BOT_TOKEN is not configured"
+elif not DATABASE_URL:
+    app_config_error = "DATABASE_URL is not configured"
+else:
+    app_config_error = None
 
 # ===== VEST ACCOUNT BOT (ОТДЕЛЬНОЕ «ЛИЦО» В ЧАТЕ) =====
 #
@@ -150,7 +145,7 @@ _BOT_AVATAR_PATH = pathlib.Path(__file__).resolve().parent / \
     "Gemini_Generated_Image_w0v6n4w0v6n4w0v6.png"
 
 # Маркер кнопок в тексте сообщений бота. Фронт парсит эти токены и
-# рендерит их как настоящие кнопки под пузырьком. Формат:
+# рендерит их как настоящие кнопки под ��узырьком. Формат:
 #   [[BTN:<action>|<label>]]            — простая кнопка (например, open_dispute)
 #   [[BTN:<action>:<param>|<label>]]     — кнопка с параметром (например,
 #                                         open_review:42 — оставить отзыв
@@ -417,18 +412,19 @@ class ChatMessage(Base):
 
 
 # ===== DB =====
-try:
-    engine = create_engine(
-        DATABASE_URL,
-        pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=10,
-    )
-    with engine.connect() as _c:
-        pass
-except Exception:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-
+# Важно: не открываем соединение при импорте модуля. На serverless cold start
+# синхронный connect к недоступной БД блокировал отдачу HTML и выглядел как
+# бесконечная загрузка как в Telegram WebView, так и в обычном браузере.
+_db_url = DATABASE_URL or "sqlite:////tmp/vest-account-fallback.db"
+_engine_options = {"pool_pre_ping": True}
+if _db_url.startswith("postgresql"):
+    _engine_options.update({
+        "pool_size": 5,
+        "max_overflow": 10,
+        "pool_timeout": 5,
+        "connect_args": {"connect_timeout": 5},
+    })
+engine = create_engine(_db_url, **_engine_options)
 SessionLocal = scoped_session(sessionmaker(bind=engine, expire_on_commit=False))
 
 
@@ -557,12 +553,9 @@ def _ensure_review_is_auto_column():
             pass
 
 
-# Выполняем при импорте модуля — без app context (engine уже готов).
-_ensure_chat_tables()
-_ensure_user_first_name_column()
-_ensure_account_reg_columns()
-_ensure_account_premium_column()
-_ensure_review_is_auto_column()
+# Миграции намеренно не выполняются при импорте модуля. Их синхронный DDL
+# блокировал cold start при проблемах сети. Схема разворачивается ботом/
+# отдельным migration job; приложение остаётся доступным даже при сбое БД.
 
 
 @app.teardown_appcontext
@@ -696,7 +689,7 @@ _MONTH_NAMES_RU = [
 def format_reg_info(reg_month, reg_year) -> str:
     """Возвращает короткую строку про дату регистрации для описания.
 
-    Примеры:
+    При��еры:
         format_reg_info(7, 2021) -> 'Регистрация: Июль 2021'
         format_reg_info(None, 2021) -> 'Регистрация: 2021 г.'
         format_reg_info(7, None) -> 'Регистрация: Июль'
@@ -942,7 +935,7 @@ _PHONE_PREFIX_COUNTRY = {
     "92": "Пакистан", "93": "Афганистан", "94": "Шри-Ланка",
     "95": "Мьянма", "98": "Иран", "211": "Южный Судан", "212": "Марокко",
     "213": "Алжир", "216": "Тунис", "218": "Ливия", "220": "Гамбия",
-    "221": "Сенегал", "222": "��авритания", "223": "Мали", "224": "Гвинея",
+    "221": "Сенегал", "222": "����авритания", "223": "Мали", "224": "Гвинея",
     "225": "Кот-д'Ивуар", "226": "Буркина-Фасо", "227": "Нигер",
     "228": "Того", "229": "Бенин", "230": "Маврикий", "231": "Либерия",
     "232": "Сьерра-Леоне", "233": "Гана", "234": "Нигерия", "235": "Чад",
@@ -1648,7 +1641,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#1d4ed8">
     <title>Vest Account — Маркетплейс аккаунтов</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script async src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
             /* Палитра — Vest Account: глубокий индиго + бирюза */
@@ -2987,7 +2980,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             align-items: center;
             line-height: 1;
             font-size: 13px;
-            /* лёгкий «шрифт-галочек» — используем обычные символы,
+            /* лёгкий «шрифт-галочек» — используем обы��ные символы,
                чтобы не зависеть от наличия SVG-шрифта в системе. */
         }
         .chat-ticks.pending {
@@ -4242,6 +4235,84 @@ INDEX_HTML = r"""<!DOCTYPE html>
         .card:nth-child(4) { animation-delay: 0.08s; }
         .card:nth-child(5) { animation-delay: 0.10s; }
         .card:nth-child(6) { animation-delay: 0.12s; }
+
+        /* ====== Vest Account 2026 — спокойный, быстрый UI ====== */
+        :root {
+            --brand: #2563eb;
+            --brand-dark: #173ea5;
+            --accent: #14b8a6;
+            --bg: #f5f7fb;
+            --surface: #ffffff;
+            --text: #101828;
+            --text-muted: #667085;
+            --gray-50: #f8fafc;
+            --gray-100: #f1f5f9;
+            --gray-200: #e2e8f0;
+            --gray-700: #344054;
+            --gray-900: #101828;
+            --blue-50: #eff6ff;
+            --blue-100: #dbeafe;
+            --blue-500: #3b82f6;
+            --blue-600: #2563eb;
+            --blue-700: #1d4ed8;
+            --blue-900: #172554;
+            --indigo-600: #2563eb;
+            --indigo-700: #1d4ed8;
+            --teal-400: #2dd4bf;
+            --teal-500: #14b8a6;
+            --shadow-sm: 0 1px 3px rgba(16,24,40,.06);
+            --shadow: 0 8px 24px rgba(16,24,40,.08);
+            --shadow-lg: 0 20px 44px rgba(16,24,40,.12);
+        }
+        html { background: var(--bg); }
+        body { background: var(--bg); background-image: none; min-height: 100%; }
+        button, input, textarea, select { font: inherit; }
+        button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+            outline: 3px solid rgba(37,99,235,.24); outline-offset: 2px;
+        }
+        .app-header {
+            top: 0; margin: 10px 12px 0; padding: 10px 12px;
+            border-radius: 18px; background: rgba(255,255,255,.94); color: var(--text);
+            border: 1px solid rgba(226,232,240,.9); box-shadow: var(--shadow);
+            backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+        }
+        .app-header::before { display: none; }
+        .avatar { width: 40px; height: 40px; border: 1px solid var(--gray-200); background: var(--blue-100); }
+        .avatar-fallback { color: var(--brand-dark); font-size: 15px; }
+        .user-name { color: var(--text); font-weight: 750; }
+        .user-meta { color: var(--text-muted); opacity: 1; }
+        .balance-pill { animation: none; background: var(--blue-50); color: var(--brand-dark); border-color: var(--blue-100); padding: 7px 10px; }
+        .balance-pill .balance-cur { background: var(--brand); color: #fff; }
+        .burger-btn span { background: var(--text); }
+        .hero { padding: 32px 18px 10px; }
+        .hero::before { content: 'VEST ACCOUNT'; display: inline-flex; color: var(--brand); font-size: 11px; font-weight: 800; letter-spacing: .14em; margin-bottom: 10px; }
+        .hero-title { font-size: clamp(30px, 9vw, 42px); line-height: 1.02; letter-spacing: -.045em; color: var(--text); }
+        .hero-title span { background: none; -webkit-text-fill-color: var(--brand); color: var(--brand); }
+        .hero-sub { color: var(--text-muted); line-height: 1.55; }
+        .section { padding: 12px 16px 4px; }
+        .filter-bar { background: var(--surface); border: 1px solid var(--gray-200); border-radius: 16px; padding: 8px; box-shadow: var(--shadow-sm); }
+        .filter-btn { background: var(--brand); box-shadow: none; border-radius: 11px; padding: 10px 13px; }
+        .filter-summary { padding-right: 6px; }
+        .section-title { font-size: 19px; letter-spacing: -.02em; }
+        .section-count { color: var(--brand-dark); background: var(--blue-100); }
+        .catalog-grid { gap: 10px; }
+        .card { border-radius: 18px; border-color: var(--gray-200); padding: 16px; box-shadow: var(--shadow-sm); animation: cardIn .22s ease-out backwards; }
+        .card:hover { border-color: var(--blue-100); box-shadow: var(--shadow); }
+        .btn-primary, .filter-chip.active, .cat-pill.active { background: var(--brand); background-image: none; box-shadow: none; }
+        .modal-sheet, .sell-form-card, .balance-card, .stat-card, .action-item { border: 1px solid var(--gray-200); box-shadow: var(--shadow-sm); }
+        .loader { min-height: 150px; }
+        .spinner { border-color: var(--gray-200); border-top-color: var(--brand); }
+        .load-failure { margin: 8px 0 20px; padding: 24px 18px; background: var(--surface); border: 1px solid var(--gray-200); border-radius: 18px; text-align: center; }
+        .load-failure strong { display: block; font-size: 17px; margin-bottom: 6px; }
+        .load-failure p { color: var(--text-muted); margin-bottom: 14px; line-height: 1.5; }
+        .load-failure button { border: 0; border-radius: 12px; background: var(--brand); color: #fff; padding: 10px 16px; font-weight: 700; }
+        @media (prefers-color-scheme: dark) {
+            :root { --bg:#0b1220; --surface:#121b2b; --text:#f8fafc; --text-muted:#94a3b8; --gray-50:#172033; --gray-100:#1e293b; --gray-200:#293548; --gray-700:#cbd5e1; --gray-900:#f8fafc; --blue-50:#142448; --blue-100:#1c376d; --blue-900:#dbeafe; }
+            .app-header { background: rgba(18,27,43,.94); }
+            .balance-pill .balance-cur { color: #fff; }
+            .card, .filter-bar { border-color: var(--gray-200); }
+        }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; } }
     </style>
 </head>
 <body>
@@ -5306,7 +5377,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                             body.innerHTML = `
                                 <div class="code-phone" id="codePhone">${escapeHtml(data.phone ? 'Номер: +' + data.phone.replace(/^\\+/, '') : '—')}</div>
                                 <div class="code-big" id="codeValue">${escapeHtml(data.code)}</div>
-                                <div class="code-hint">Код действителен ограниченное время. При необходимости можно запросить повторно.</div>
+                                <div class="code-hint">Код действителен ограниченное время. При необходимости можно запрос��ть повторно.</div>
                             `;
                         }
                         dom.codeModal.classList.remove('hidden');
@@ -5649,7 +5720,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     const time = formatChatTime(c.last_message_at);
                     // sender_id === 0 — это сообщение от Vest Account (бот).
                     // Показываем его в превью с собственным префиксом, а не
-                    // как входящее от собеседника.
+                    // как входящее от собеседник��.
                     const _lastSid = c.last_message_sender_id;
                     const _myId = (state.tgUser && state.tgUser.id) || 0;
                     let _prefix = '';
@@ -6466,7 +6537,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 if (sellState.busy) return;
                 const phone = (document.getElementById('sellPhone')?.value || '').trim();
                 if (!phone || !phone.startsWith('+') || phone.length < 8) {
-                    showStep2Error('Введите номер в формате +79001234567');
+                    showStep2Error('Введите номер в фо��мате +79001234567');
                     return;
                 }
                 showStep2Error('');
@@ -6490,7 +6561,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                                 price,
                                 origin: sellState.origin,
                                 // Месяц/год регистрации — бэкенд их проверит
-                                // (диапазоны) и запишет в Account.reg_month / .reg_year.
+                                // (диапазоны) �� запишет в Account.reg_month / .reg_year.
                                 reg_month: regMonth,
                                 reg_year: regYear,
                             },
@@ -6792,12 +6863,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
             async function api(path, options = {}) {
                 const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
                 if (state.initData) headers['X-Init-Data'] = state.initData;
+                const controller = new AbortController();
+                const timeoutMs = Number(options.timeoutMs) || 10000;
+                const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+                const externalSignal = options.signal;
+                if (externalSignal) externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
                 try {
-                    const resp = await fetch(path, { ...options, headers });
-                    const data = await resp.json().catch(() => ({ ok: false, error: 'bad json' }));
+                    const fetchOptions = { ...options, headers, signal: controller.signal };
+                    delete fetchOptions.timeoutMs;
+                    const resp = await fetch(path, fetchOptions);
+                    const data = await resp.json().catch(() => ({ ok: false, error: 'bad_json' }));
                     return { ok: resp.ok && data.ok, status: resp.status, data };
                 } catch (err) {
-                    return { ok: false, error: err.message };
+                    return { ok: false, status: 0, error: err.name === 'AbortError' ? 'timeout' : (err.message || 'network_error') };
+                } finally {
+                    window.clearTimeout(timeoutId);
                 }
             }
 
@@ -6967,6 +7047,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 state.categories = r.data.categories || [];
                 renderFilterModal();
             }
+            function renderLoadFailure(message) {
+                showEmpty(false);
+                dom.catalog.innerHTML = `<div class="load-failure" role="alert"><strong>Не удалось загрузить каталог</strong><p>${escapeHtml(message || 'Проверьте соединение и попробуйте ещё раз.')}</p><button type="button" id="retryCatalog">Повторить</button></div>`;
+                const retry = document.getElementById('retryCatalog');
+                if (retry) retry.addEventListener('click', loadCatalog, { once: true });
+            }
+
             async function loadCatalog() {
                 showLoader(true);
                 const params = new URLSearchParams();
@@ -6980,17 +7067,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 if (state.createdToYear    && state.createdToYear    !== 'all') params.set('to_year',    state.createdToYear);
                 params.set('limit', '100');
 
-                const r = await api('/api/catalog?' + params.toString());
-                showLoader(false);
-                if (!r.ok) {
-                    dom.catalog.innerHTML = '';
-                    showEmpty(true);
-                    return;
+                try {
+                    const r = await api('/api/catalog?' + params.toString());
+                    if (!r.ok) {
+                        renderLoadFailure(r.error === 'timeout' ? 'Сервер отвечает слишком долго.' : 'Проверьте соединение и попробуйте ещё раз.');
+                        return;
+                    }
+                    state.catalog = r.data.items || [];
+                    state.catalogSig = state.catalog.map((it) => `${it.id}:${it.price}:${it.country}`).join('|');
+                    renderCatalog();
+                    updateFilterSummary();
+                } catch (error) {
+                    renderLoadFailure('Произошла непредвиденная ошибка.');
+                } finally {
+                    showLoader(false);
                 }
-                state.catalog = r.data.items || [];
-                state.catalogSig = state.catalog.map((it) => `${it.id}:${it.price}:${it.country}`).join('|');
-                renderCatalog();
-                updateFilterSummary();
             }
 
             /* Рендер сетки фильтров в модалке — всё видно без скролла */
@@ -8350,7 +8441,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             // так как пополнение делается в боте, а не в мини-аппе.
             function topupGoToBot() {
                 openBotDirect('deposit');
-                showToast('Открываем бота для пополнения…', 'success');
+                showToast('Открываем б��та для пополнения…', 'success');
             }
 
             /* ===== Bind events ===== */
@@ -8620,7 +8711,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                             const uname = msgBtn.dataset.peerUsername || '';
                             closeModal('userModal');
                             // Используем уже существующий openChatByPeerId —
-                            // он подтянет/создаст чат и откроет модалку диалога.
+                            // он подтянет/создаст чат и откро��т модалку диалога.
                             openChatByPeerId(pid, { username: uname });
                         });
                     }
@@ -8719,23 +8810,31 @@ INDEX_HTML = r"""<!DOCTYPE html>
             async function bootstrap() {
                 renderUser();
                 bindEvents();
+                try {
+                    await auth();
+                    // Ошибка одного запроса больше не оставляет весь интерфейс в loading.
+                    await Promise.allSettled([loadCategories(), loadCatalog()]);
+                    updateFilterSummary();
+                    api('/api/bot-info').then((r) => {
+                        if (r.ok && r.data.username) state.botUsername = r.data.username;
+                    });
+                } catch (error) {
+                    showLoader(false);
+                    renderLoadFailure('Приложение не смогло запуститься. Попробуйте ещё раз.');
+                }
+            }
 
-                await auth();
-
-                // Грузим всё параллельно
-                await Promise.all([loadCategories(), loadCatalog()]);
-                updateFilterSummary();
-
-                // Узнаём username бота
-                api('/api/bot-info').then((r) => {
-                    if (r.ok && r.data.username) state.botUsername = r.data.username;
+            function startApp() {
+                bootstrap().catch(() => {
+                    showLoader(false);
+                    renderLoadFailure('Приложение не смогло запуститься. Попробуйте ещё раз.');
                 });
             }
 
             if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', bootstrap);
+                document.addEventListener('DOMContentLoaded', startApp, { once: true });
             } else {
-                bootstrap();
+                startApp();
             }
         })();
     </script>
@@ -8895,7 +8994,7 @@ def api_me(telegram_id, tg_user):
 
 # ===== API: МОИ ПОКУПКИ =====
 #
-# Идентично логике из bot.py: список покупок юзера + выдача
+# Ид��нтично логике из bot.py: список покупок юзера + выдача
 # кода подтверждения / .session / JSON по id покупки.
 # Все запросы проходят require_auth (initData → telegram_id),
 # и каждый фильтрует покупки по user_id, чтобы чужой код не ушёл.
@@ -9237,7 +9336,7 @@ def api_purchase_code(telegram_id, tg_user, purchase_id):
                 "error": "code_not_found",
                 "phone": account.phone,
                 "hint": "Подождите 1–2 минуты и попробуйте снова. "
-                        "Либо скачайте .session файл и войдите вручную.",
+                        "Либо скачайт�� .session файл и войдите вручную.",
             }), 404
 
         return jsonify({
@@ -10569,13 +10668,9 @@ def _start_hold_releaser_once():
         _HOLD_LOOP_STARTED = True
 
 
-# Запускаем при импорте модуля — это безопасно: поток daemon=True и
-# ничего не блокирует. Если БД ещё не готова — первый тик просто упадёт
-# в except и попробует снова через HOLD_RELEASE_CHECK_INTERVAL секунд.
-try:
-    _start_hold_releaser_once()
-except Exception:
-    pass
+# На Vercel фоновые потоки нельзя запускать при импорте: serverless-инстанс
+# может быть заморожен сразу после ответа. Релиз холдов должен вызываться
+# планировщиком/ботом, а не блокировать жизненный цикл web-приложения.
 
 
 # ===== ФОНОВЫЙ АВТО-ОТЗЫВ (через REVIEW_AUTO_POST_DAYS дней) =====
@@ -10787,10 +10882,7 @@ def _start_auto_reviewer_once():
         _AUTO_REVIEW_LOOP_STARTED = True
 
 
-try:
-    _start_auto_reviewer_once()
-except Exception:
-    pass
+# Авто-отзывы также запускаются внешним планировщиком/ботом, не web worker.
 
 
 @app.errorhandler(404)
