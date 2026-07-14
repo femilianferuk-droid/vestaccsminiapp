@@ -50,7 +50,7 @@ from dotenv import load_dotenv
 
 # Telethon — для получения кода подтверждения и выдачи сессии.
 # Те же api_id / api_hash, что и в боте (ОБЩАЯ сессия, общий ключ).
-from telethon import TelegramClient
+from telethon import TelegramClient, errors as telethon_errors
 from telethon.sessions import StringSession, SQLiteSession
 
 load_dotenv()
@@ -3324,7 +3324,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         }
         .chat-bubble.mine .chat-bubble-time { color: rgba(255, 255, 255, 0.85); }
 
-        /* Нижняя строка пузырька: время + галочки. Галочки показываем
+        /* Нижня�� строка пузырька: время + галочки. Галочки показываем
            Т��ЛЬКО для «своих» сообщений (mine). Своих сообщений собеседник
            не увидит — только наш пузырь. */
         .chat-bubble-foot {
@@ -4169,6 +4169,50 @@ INDEX_HTML = r"""<!DOCTYPE html>
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
+        /* ===== Блок статуса валидации перед покупкой ===== */
+        .validate-status {
+            display: flex; align-items: flex-start; gap: 10px;
+            padding: 12px 14px; border-radius: 12px; margin-bottom: 10px;
+            font-size: 13px; line-height: 1.5; font-weight: 500;
+        }
+        .validate-status.checking {
+            background: rgba(245, 158, 11, 0.10);
+            border: 1px solid rgba(245, 158, 11, 0.25);
+            color: #92400e;
+        }
+        .validate-status.valid {
+            background: rgba(34, 197, 94, 0.10);
+            border: 1px solid rgba(34, 197, 94, 0.28);
+            color: #14532d;
+        }
+        .validate-status.invalid {
+            background: rgba(239, 68, 68, 0.10);
+            border: 1px solid rgba(239, 68, 68, 0.28);
+            color: #7f1d1d;
+        }
+        .validate-status-icon {
+            font-size: 18px; flex-shrink: 0; line-height: 1.3;
+        }
+        .validate-status-text { flex: 1; }
+        .validate-status-spinner {
+            width: 18px; height: 18px; border-radius: 50%;
+            border: 2px solid rgba(245,158,11,0.25);
+            border-top-color: #d97706;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0; margin-top: 1px;
+        }
+        /* Кнопка "Купить (подтвердить)" — зелёная */
+        .btn-confirm-buy {
+            width: 100%; padding: 14px; border: none; border-radius: 14px;
+            background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+            color: #fff; font-size: 15px; font-weight: 700;
+            cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;
+            box-shadow: 0 4px 14px rgba(22, 163, 74, 0.35);
+            margin-bottom: 10px;
+        }
+        .btn-confirm-buy:active { transform: scale(0.97); }
+        .btn-confirm-buy.loading { opacity: 0.7; pointer-events: none; }
+
         /* Строка с инфо о выставлении аккаунта */
         .sell-listing-progress {
             display: flex; align-items: center; gap: 8px;
@@ -4819,7 +4863,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
         @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; } }
     </style>
-    <!-- Применяем тему до рендера, чтобы избежать мигания (FOUC) -->
+    <!-- Применяем тему до рендера, ��тобы избежать мигания (FOUC) -->
     <script>
         (function() {
             try {
@@ -5376,7 +5420,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         Отдельная модалка, чтобы не путать с pageProfile (там показан СВОЙ
         профиль с балансом и холдом). Здесь — только публичная информация:
         имя, @username, аватар, рейтинг, отзывы, дата регистрации.
-        Поддерживает две кнопки действия: «Написать» (создаёт/открывает чат
+        Поддерживает две кнопки действия: «Написать» (создаёт/открывает ча��
         с этим юзером) и «Открыть своего профиля» (если кликнули по себе).
     -->
     <div class="modal hidden" id="userModal">
@@ -5570,6 +5614,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 <li>🔒 Без банов на момент продажи</li>
             </ul>
 
+            <!-- Статус валидации аккаунта (показывается при нажатии «Купить») -->
+            <div class="validate-status hidden" id="validateStatus" role="status" aria-live="polite">
+                <span class="validate-status-icon" id="validateStatusIcon"></span>
+                <span class="validate-status-text" id="validateStatusText"></span>
+            </div>
+
+            <!-- Кнопка подтверждения покупки (появляется только после успешной валидации) -->
+            <button class="btn-confirm-buy hidden" id="buyConfirmBtn" type="button">
+                Купить (подтвердить)
+            </button>
+
             <button class="btn-primary" id="buyBtn">Купить</button>
             <button class="btn-secondary" data-close="itemModal">Закрыть</button>
         </div>
@@ -5748,6 +5803,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 itemSeller: $('itemSeller'),
                 itemRating: $('itemRating'),
                 buyBtn: $('buyBtn'),
+                buyConfirmBtn: $('buyConfirmBtn'),
+                validateStatus: $('validateStatus'),
+                validateStatusIcon: $('validateStatusIcon'),
+                validateStatusText: $('validateStatusText'),
                 itemChatBtn: $('itemChatBtn'),
                 openFilters: $('openFilters'),
                 filtersModal: $('filtersModal'),
@@ -7907,7 +7966,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             const COUNTRY_LIST = [
                 'США','Россия','Индия','Германия','Бразилия','Индонезия',
                 'Казахстан','Украина','Беларусь','Вьетнам','Филиппины','Мьянма',
-                'Мексика','Турция','Польша','Великобритания','Аргентина',
+                'Мексика','Турци��','Польша','Великобритания','Аргентина',
                 'Бангладеш','Пакистан','Египет','Нигерия','Кения','Иран',
                 'Саудовская Аравия','ОАЭ','Таиланд','Малайзия','Сингапур',
                 'Южная Корея','Япония','Китай','Австралия','Канада',
@@ -7965,7 +8024,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 });
             }
             // Синхронизирует value <select>'ов с state.createdFrom* / createdTo*
-            // и подсвечивает активные (синий фон) если выбран конкретный м/г.
+            // и подсвечивает активные (си��ий фон) если выбран конкретный м/г.
             function syncDateSelects() {
                 const pairs = [
                     { sel: dom.filterFromMonth, value: state.createdFromMonth },
@@ -8369,9 +8428,46 @@ INDEX_HTML = r"""<!DOCTYPE html>
             }
             /* Текущий выбранный товар для покупки */
             const buyState = { item: null, busy: false };
+            /* Состояние валидации: null | 'checking' | 'valid' | 'invalid' | 'error' */
+            const validateState = { status: null };
+
+            // Сбрасывает UI валидации — вызывается при открытии новой модалки
+            function resetValidateUI() {
+                validateState.status = null;
+                if (dom.validateStatus) dom.validateStatus.className = 'validate-status hidden';
+                if (dom.validateStatusIcon) dom.validateStatusIcon.textContent = '';
+                if (dom.validateStatusText) dom.validateStatusText.textContent = '';
+                if (dom.buyConfirmBtn) dom.buyConfirmBtn.classList.add('hidden');
+                if (dom.buyBtn) {
+                    dom.buyBtn.disabled = false;
+                    dom.buyBtn.classList.remove('loading');
+                    dom.buyBtn.textContent = 'Купить';
+                }
+            }
+
+            function showValidateStatus(state, text) {
+                if (!dom.validateStatus) return;
+                dom.validateStatus.className = 'validate-status ' + state;
+                const icon = dom.validateStatusIcon;
+                const spinner = dom.validateStatus.querySelector('.validate-status-spinner');
+
+                if (state === 'checking') {
+                    // Спиннер вместо иконки
+                    if (icon) icon.innerHTML = '<span class="validate-status-spinner"></span>';
+                } else if (state === 'valid') {
+                    if (icon) icon.textContent = '';
+                } else if (state === 'invalid') {
+                    if (icon) icon.textContent = '';
+                } else {
+                    if (icon) icon.textContent = '';
+                }
+                if (dom.validateStatusText) dom.validateStatusText.textContent = text;
+            }
 
             function openItem(it) {
                 buyState.item = it;
+                // Сбрасываем UI валидации при каждом открытии нового товара
+                resetValidateUI();
                 // ====== Шапк�� модалки: название лота (как в карточке) ======
                 // Раньше в шапке модалки дублировалась страна с флагом.
                 // Теперь показываем на��вание лота (listing.title), флаг убран.
@@ -8656,15 +8752,182 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 openModal('itemModal');
             }
 
+            // ===== ЭТАП 1: Валидация аккаунта =====
+            // Вызывается при нажатии "Купить". Проверяет аккаунт через Telethon.
+            // После успеха показывает кнопку «Купить (подтвердить)».
             async function buyCurrentItem() {
                 if (buyState.busy || !buyState.item) return;
+
+                // Если валидация уже прошла успешно — не запускаем заново
+                if (validateState.status === 'valid') {
+                    confirmBuyCurrentItem();
+                    return;
+                }
+
                 buyState.busy = true;
-                const oldText = dom.buyBtn ? dom.buyBtn.textContent : '';
                 if (dom.buyBtn) {
                     dom.buyBtn.disabled = true;
                     dom.buyBtn.classList.add('loading');
-                    dom.buyBtn.textContent = '⏳ Покупаем…';
+                    dom.buyBtn.textContent = 'Проверяем...';
                 }
+                if (dom.buyConfirmBtn) dom.buyConfirmBtn.classList.add('hidden');
+
+                validateState.status = 'checking';
+                showValidateStatus('checking', 'Проверяем на валид, это может занять до минуты...');
+
+                try {
+                    const r = await api('/api/validate_account', {
+                        method: 'POST',
+                        body: JSON.stringify({ account_id: buyState.item.id }),
+                    });
+
+                    if (!r.ok) {
+                        // Ошибка соединения или сервера — не снимаем, даём повторить
+                        const err = (r.data && r.data.error) || 'unknown';
+                        validateState.status = 'error';
+                        showValidateStatus('invalid', 'Не удалось проверить аккаунт. Попробуйте ещё раз.');
+                        if (dom.buyBtn) {
+                            dom.buyBtn.disabled = false;
+                            dom.buyBtn.classList.remove('loading');
+                            dom.buyBtn.textContent = 'Купить';
+                        }
+                        return;
+                    }
+
+                    if (r.data.valid) {
+                        // Аккаунт валидный — показываем кнопку подтверждения
+                        validateState.status = 'valid';
+                        showValidateStatus('valid', 'Аккаунт проверен — всё в порядке. Подтвердите покупку.');
+                        if (dom.buyBtn) {
+                            dom.buyBtn.disabled = true;
+                            dom.buyBtn.classList.remove('loading');
+                            dom.buyBtn.textContent = 'Купить';
+                        }
+                        if (dom.buyConfirmBtn) {
+                            dom.buyConfirmBtn.classList.remove('hidden');
+                            dom.buyConfirmBtn.disabled = false;
+                        }
+                    } else {
+                        // Аккаунт невалиден — объявление уже снято сервером
+                        validateState.status = 'invalid';
+                        showValidateStatus('invalid', 'Аккаунт не валиден — объявление снято. Выберите другой аккаунт.');
+                        if (dom.buyBtn) {
+                            dom.buyBtn.disabled = true;
+                            dom.buyBtn.classList.remove('loading');
+                            dom.buyBtn.textContent = 'Недоступен';
+                        }
+                        // Обновляем каталог — убираем снятое объявление
+                        setTimeout(async () => {
+                            try { await loadCatalog(); } catch (e) { /* noop */ }
+                        }, 800);
+                    }
+                } catch (e) {
+                    validateState.status = 'error';
+                    showValidateStatus('invalid', 'Ошибка сети при проверке. Попробуйте ещё раз.');
+                    if (dom.buyBtn) {
+                        dom.buyBtn.disabled = false;
+                        dom.buyBtn.classList.remove('loading');
+                        dom.buyBtn.textContent = 'Купить';
+                    }
+                } finally {
+                    buyState.busy = false;
+                }
+            }
+
+            // ===== ЭТАП 2: Реальная покупка (после успешной валидации) =====
+            async function confirmBuyCurrentItem() {
+                if (buyState.busy || !buyState.item) return;
+                if (validateState.status !== 'valid') return;
+
+                buyState.busy = true;
+                if (dom.buyConfirmBtn) {
+                    dom.buyConfirmBtn.disabled = true;
+                    dom.buyConfirmBtn.classList.add('loading');
+                    dom.buyConfirmBtn.textContent = 'Покупаем...';
+                }
+
+                try {
+                    const r = await api('/api/buy', {
+                        method: 'POST',
+                        body: JSON.stringify({ account_id: buyState.item.id }),
+                    });
+
+                    if (r.ok) {
+                        showToast('Покупка успешна!', 'success');
+                        if (typeof r.data.balance !== 'undefined') {
+                            setBalanceUI(r.data.balance, {
+                                hold: r.data.hold_balance,
+                                syncedAt: r.data.synced_at,
+                            });
+                        } else {
+                            refreshBalance({ silent: true });
+                        }
+                        // flash-эффект перед закрытием
+                        const sheet = document.querySelector('#itemModal .modal-sheet');
+                        if (sheet) {
+                            sheet.style.transition = 'transform 0.18s, opacity 0.18s';
+                            sheet.style.transform = 'scale(0.96)';
+                            sheet.style.opacity = '0.0';
+                            setTimeout(() => {
+                                sheet.style.transform = '';
+                                sheet.style.opacity = '';
+                            }, 220);
+                        }
+                        setTimeout(() => {
+                            closeModal('itemModal');
+                            loadCatalog();
+                        }, 200);
+                        // Авто-открытие чата с продавцом
+                        const sellerId = r.data && r.data.seller_id;
+                        const threadId = r.data && r.data.chat_thread_id;
+                        if (sellerId && threadId && typeof openChatByPeerId === 'function') {
+                            setTimeout(async () => {
+                                try { await pollChats(); } catch (e) { /* noop */ }
+                                openChatByPeerId(sellerId, null);
+                            }, 280);
+                        }
+                    } else {
+                        const err = (r.data && r.data.error) || 'unknown';
+                        showToast(translateBuyError(err), 'error');
+                        // shake-эффект при ошибке
+                        const sheet = document.querySelector('#itemModal .modal-sheet');
+                        if (sheet) {
+                            sheet.classList.remove('shake');
+                            void sheet.offsetWidth;
+                            sheet.classList.add('shake');
+                            setTimeout(() => sheet.classList.remove('shake'), 450);
+                        }
+                        if (dom.buyConfirmBtn) {
+                            dom.buyConfirmBtn.disabled = false;
+                            dom.buyConfirmBtn.classList.remove('loading');
+                            dom.buyConfirmBtn.textContent = 'Купить (подтвердить)';
+                        }
+                        if (err === 'already_sold' || err === 'not_found') {
+                            try { await loadCatalog(); } catch (e) { /* noop */ }
+                            try { await loadCategories(); } catch (e) { /* noop */ }
+                            setTimeout(() => {
+                                try { closeModal('itemModal'); } catch (e) { /* noop */ }
+                            }, 320);
+                        }
+                    }
+                } catch (e) {
+                    showToast('Ошибка сети', 'error');
+                    const sheet = document.querySelector('#itemModal .modal-sheet');
+                    if (sheet) {
+                        sheet.classList.remove('shake');
+                        void sheet.offsetWidth;
+                        sheet.classList.add('shake');
+                        setTimeout(() => sheet.classList.remove('shake'), 450);
+                    }
+                    if (dom.buyConfirmBtn) {
+                        dom.buyConfirmBtn.disabled = false;
+                        dom.buyConfirmBtn.classList.remove('loading');
+                        dom.buyConfirmBtn.textContent = 'Купить (подтвердить)';
+                    }
+                } finally {
+                    buyState.busy = false;
+                }
+            }
                 try {
                     const r = await api('/api/buy', {
                         method: 'POST',
@@ -8762,16 +9025,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
             function translateBuyError(err) {
                 const map = {
-                    'unauthorized': '❌ Не авторизовано',
-                    'not_found': '❌ Аккаунт уже купили',
-                    'already_sold': '❌ Аккаунт уже продан',
-                    'has_active_listing': '❌ Аккаунт выставлен на маркетплейсе в боте',
-                    'low_balance': '❌ Недостаточно средств — пополните баланс',
-                    'self_buy': '❌ Нельзя купить свой аккаунт',
-                    'integrity_error': '❌ Ошибка БД, попробуйте ещё раз',
-                    'server_error': '❌ Ошибка сервера, попробуйте позже',
+                    'unauthorized': 'Не авторизовано',
+                    'not_found': 'Аккаунт уже купили',
+                    'already_sold': 'Аккаунт уже продан',
+                    'has_active_listing': 'Аккаунт выставлен на маркетплейсе в боте',
+                    'low_balance': 'Недостаточно средств — пополните баланс',
+                    'self_buy': 'Нельзя купить свой аккаунт',
+                    'integrity_error': 'Ошибка БД, попробуйте ещё раз',
+                    'server_error': 'Ошибка сервера, попробуйте позже',
+                    'invalid_account': 'Аккаунт не прошёл проверку',
                 };
-                return map[err] || ('❌ ' + err);
+                return map[err] || err;
             }
             function showLoader(v) { dom.loader.classList.toggle('hidden', !v); }
             function showEmpty(v) { dom.emptyState.classList.toggle('hidden', !v); }
@@ -8953,7 +9217,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 const wrap = $('profileListings');
                 const count = $('profileListingsCount');
                 if (!wrap) return;
-                wrap.innerHTML = '<div class="profile-listings-state">Загружаем объявления…</div>';
+                wrap.innerHTML = '<div class="profile-listings-state">Загружаем о��ъявления…</div>';
                 try {
                     const r = await api('/api/my_listings');
                     if (!r.ok) throw new Error('load_failed');
@@ -9538,9 +9802,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     });
                 });
 
-                // Кнопка «Купить» в модалке товара
+                // Кнопка «Купить» (этап 1: валидация)
                 if (dom.buyBtn) {
                     dom.buyBtn.addEventListener('click', buyCurrentItem);
+                }
+                // Кнопка «Купить (подтвердить)» (этап 2: реальная покупка)
+                if (dom.buyConfirmBtn) {
+                    dom.buyConfirmBtn.addEventListener('click', confirmBuyCurrentItem);
                 }
                 // Кнопка «Написать продавцу» в модалке товара
                 if (dom.itemChatBtn) {
@@ -9760,7 +10028,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 bindEvents();
                 try {
                     await auth();
-                    // Ошибка одного запроса больше не оставляет весь интерфейс в loading.
+                    // Ошибка одного запроса больше не оставляет ��есь интерфейс в loading.
                     await Promise.allSettled([loadCategories(), loadCatalog()]);
                     updateFilterSummary();
                     api('/api/bot-info').then((r) => {
@@ -10141,7 +10409,7 @@ def api_post_review(telegram_id, tg_user):
             if not linked_listing:
                 # Крайний случай — создаём синтетический листинг-«sold»,
                 # чтобы Review-строка могла сослаться. Безопасно: цена
-                # реальная, бот такие тоже умеет читать.
+                # реальная, бот та��ие тоже умеет читать.
                 linked_listing = Listing(
                     seller_id=int(account.seller_id),
                     account_id=account.id,
@@ -10641,6 +10909,144 @@ def api_catalog():
         session.close()
 
 
+async def _validate_account_async(session_string: str) -> dict:
+    """Проверяет валидность аккаунта: подключается к Telegram, проверяет
+    авторизацию и делает простой запрос (getMe) чтобы убедиться что аккаунт
+    живой и не имеет критических ошибок.
+
+    Возвращает:
+        {"ok": True, "valid": True}          — аккаунт живой
+        {"ok": True, "valid": False, "reason": "..."} — аккаунт невалиден
+        {"ok": False, "error": "..."}        — ошибка соединения
+    """
+    if not session_string or len(session_string) < 50:
+        return {"ok": True, "valid": False, "reason": "empty_session"}
+
+    client = None
+    try:
+        sess = StringSession(session_string)
+        client = TelegramClient(sess, API_ID, API_HASH)
+        await client.connect()
+
+        if not await client.is_user_authorized():
+            return {"ok": True, "valid": False, "reason": "not_authorized"}
+
+        # Делаем реальный запрос — getMe
+        me = await client.get_me()
+        if me is None:
+            return {"ok": True, "valid": False, "reason": "get_me_failed"}
+
+        return {"ok": True, "valid": True}
+
+    except telethon_errors.AuthKeyUnregisteredError:
+        return {"ok": True, "valid": False, "reason": "auth_key_unregistered"}
+    except telethon_errors.UserDeactivatedError:
+        return {"ok": True, "valid": False, "reason": "user_deactivated"}
+    except telethon_errors.UserDeactivatedBanError:
+        return {"ok": True, "valid": False, "reason": "account_banned"}
+    except Exception as e:
+        err_str = str(e)[:120]
+        # Если явная ошибка авторизации — помечаем невалидным
+        auth_err_keywords = ["auth", "unauthorized", "deactivated", "banned", "flood", "session"]
+        if any(kw in err_str.lower() for kw in auth_err_keywords):
+            return {"ok": True, "valid": False, "reason": f"auth_error: {err_str}"}
+        return {"ok": False, "error": f"connection_error: {err_str}"}
+    finally:
+        if client:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+
+def _validate_account(session_string: str) -> dict:
+    """Sync-обёртка для _validate_account_async."""
+    try:
+        return _run_async(_validate_account_async(session_string), timeout=60)
+    except Exception as e:
+        return {"ok": False, "error": f"run_error: {str(e)[:100]}"}
+
+
+@app.route("/api/validate_account", methods=["POST"])
+@require_auth
+def api_validate_account(telegram_id, tg_user):
+    """Проверяет валидность аккаунта перед покупкой.
+
+    Принимает JSON: {"account_id": <int>}
+    Если аккаунт невалиден — снимает объявление с продажи (listing.status='cancelled').
+    Возвращает: {"ok": True, "valid": True/False, "reason": "..."}
+    """
+    payload = request.get_json(silent=True) or {}
+    try:
+        account_id = int(payload.get("account_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "bad_account_id"}), 400
+
+    if account_id <= 0:
+        return jsonify({"ok": False, "error": "missing_account_id"}), 400
+
+    db_sess = SessionLocal()
+    try:
+        account = db_sess.execute(
+            select(Account).where(Account.id == account_id)
+        ).scalar_one_or_none()
+
+        if not account:
+            return jsonify({"ok": False, "error": "not_found"}), 404
+
+        if account.is_sold:
+            return jsonify({"ok": False, "error": "already_sold"}), 409
+
+        session_string = account.session_string
+        if not session_string:
+            # Нет сессии — снимаем объявление
+            listing = db_sess.execute(
+                select(Listing).where(
+                    Listing.account_id == account_id,
+                    Listing.status == "active"
+                )
+            ).scalar_one_or_none()
+            if listing:
+                listing.status = "cancelled"
+                db_sess.commit()
+            return jsonify({"ok": True, "valid": False, "reason": "no_session"}), 200
+    finally:
+        db_sess.close()
+
+    # Запускаем валидацию (блокирующий вызов до 60 сек)
+    result = _validate_account(session_string)
+
+    if not result.get("ok"):
+        # Ошибка соединения — не снимаем объявление, сообщаем о сбое
+        return jsonify({
+            "ok": False,
+            "error": result.get("error", "connection_failed"),
+        }), 200
+
+    if not result.get("valid"):
+        # Аккаунт невалиден — снимаем объявление
+        db_sess2 = SessionLocal()
+        try:
+            listing = db_sess2.execute(
+                select(Listing).where(
+                    Listing.account_id == account_id,
+                    Listing.status == "active"
+                )
+            ).scalar_one_or_none()
+            if listing:
+                listing.status = "cancelled"
+                db_sess2.commit()
+        finally:
+            db_sess2.close()
+
+    return jsonify({
+        "ok": True,
+        "valid": result.get("valid", False),
+        "reason": result.get("reason", ""),
+        "account_id": account_id,
+    })
+
+
 @app.route("/api/buy", methods=["POST"])
 @require_auth
 def api_buy(telegram_id, tg_user):
@@ -10932,7 +11338,7 @@ def api_buy(telegram_id, tg_user):
         #   2) Перечитываем Account в НОВОЙ сессии (старая убита rollback'ом).
         #   3) Если аккаунт реально продан (is_sold=True) — честно
         #      возвращаем "already_sold" (это легитимный случай: между
-        #      нашими проверками кто-то купил аккаунт через бот или
+        #      нашими проверками кто-то купил аккаунт через бот ил��
         #      параллельную сессию).
         #   4) Если аккаунт НЕ продан — это была другая IntegrityError
         #      (например, гонка на UNIQUE chat_threads или сбой Hold),
