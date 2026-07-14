@@ -791,9 +791,10 @@ def validate_init_data(init_data: str):
         if not received_hash:
             return None
         data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
-        # Алгоритм Telegram: HMAC-SHA256(key=BOT_TOKEN, msg=b"WebAppData")
-        # hmac.new(key, msg, digestmod) — key первый, msg второй.
-        secret_key = hmac.new(BOT_TOKEN.encode(), b"WebAppData", hashlib.sha256).digest()
+        # Алгоритм Telegram (https://core.telegram.org/bots/webapps#validating-data):
+        # secret_key = HMAC_SHA256(key="WebAppData", msg=bot_token)
+        # В Python hmac.new(key, msg, digestmod) → key=b"WebAppData", msg=bot_token.
+        secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
         computed_hash = hmac.new(
             secret_key, data_check_string.encode(), hashlib.sha256
         ).hexdigest()
@@ -941,7 +942,7 @@ MAX_LISTING_PRICE = 50000.0 # максимальная цена
 
 # In-memory state для phone-flow (как pending_auth в bot.py).
 # Ключ — telegram_id, в нём хранится активный Telethon-клиент,
-# phone_code_hash и черновик объявления до прохождения кода/2FA.
+# phone_code_hash и черновик ��бъявления до прохождения кода/2FA.
 _SELL_PENDING: dict = {}
 
 # Страны по телефонным кодам (как в bot.py, чтобы мини-апп и бот
@@ -5127,7 +5128,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div class="modal-backdrop" data-close="codeModal"></div>
         <div class="modal-sheet">
             <div class="modal-handle"></div>
-            <h3 class="modal-title" id="codeModalTitle">🔐 Код подтверждения</h3>
+            <h3 class="modal-title" id="codeModalTitle">���� Код подтверждения</h3>
             <div class="code-modal-body" id="codeModalBody">
                 <div class="code-phone" id="codePhone">—</div>
                 <div class="code-big" id="codeValue">—</div>
@@ -5245,7 +5246,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 Можно оставить пустым.
             </div>
 
-            <label class="sell-label">Происхождение аккаунта</label>
+            <label class="sell-label">Происх��ждение аккаунта</label>
             <div class="sell-origin-grid" id="sellOriginGrid">
                 <button type="button" class="sell-origin-btn" data-origin="Авторег">🤖 Авторег</button>
                 <button type="button" class="sell-origin-btn" data-origin="Саморег">👤 Саморег</button>
@@ -5654,7 +5655,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             <div class="modal-handle"></div>
             <h3 class="modal-title">⭐ Оставить отзыв</h3>
             <p class="support-text" id="reviewModalHint">
-                Оцените покупку от 1 до 5 звёзд. Если оставить отзыв не получится — он выставится автоматически через 7 дней (5⭐).
+                Оцените покупку от 1 до 5 звёзд. Если остави��ь отзыв не получится — он выставится автоматически через 7 дней (5⭐).
             </p>
             <!-- Звёзды: радиокнопки, скрытые визуально, но семантически верные.
                  Клик по «звезде» (label) меняет выбранную и подсветку.
@@ -7885,13 +7886,25 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
             /* ===== Auth + balance ===== */
             async function auth() {
-                if (!state.initData) return { ok: false };
+                if (!state.initData) {
+                    // Открыт в браузере без Telegram WebApp — используем
+                    // initDataUnsafe.user если есть, иначе остаёмся гостем.
+                    renderUser();
+                    return { ok: false };
+                }
                 const r = await api('/api/auth', {
                     method: 'POST',
                     body: JSON.stringify({ initData: state.initData }),
                 });
                 if (r.ok && r.data.user) {
+                    // Записываем пользователя из ответа сервера в state,
+                    // чтобы renderUser() мог показать имя/аватар/баланс.
+                    state.tgUser = r.data.user;
                     setBalanceUI(r.data.user.balance || 0);
+                    renderUser();
+                } else {
+                    // initData есть, но сервер отклонил — рисуем гостя.
+                    renderUser();
                 }
                 return r;
             }
@@ -7971,7 +7984,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 'Мексика','Турци��','Польша','Великобритания','Аргентина',
                 'Бангладеш','Пакистан','Египет','Нигерия','Кения','Иран',
                 'Саудовская Аравия','ОАЭ','Таиланд','Малайзия','Сингапур',
-                'Южная Корея','Япония','Китай','Австралия','Канада',
+                'Южная Корея','Япония','Китай','Ав��тралия','Канада',
                 'Франция','Италия','Испания',
             ];
             const ORIGIN_OPTIONS = [
@@ -8539,7 +8552,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         delete avatarEl.dataset.sellerId;
                     }
                 }
-                // Полное имя и @handle рисуем в одну строку с разделителем.
+                // Полное имя и @handle рисуем в одн�� строку с разделителем.
                 if (dom.itemSeller) {
                     dom.itemSeller.innerHTML = it.seller_username
                         ? `${escapeHtml(sellerName)} <span class="item-seller-handle-inline">@${escapeHtml(it.seller_username)}</span>`
@@ -9648,7 +9661,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             // так как пополнение делается в боте, а не в мини-аппе.
             function topupGoToBot() {
                 openBotDirect('deposit');
-                showToast('Открываем б��та для пополне��ия…', 'success');
+                showToast('Открываем б��та для пополне��ия��', 'success');
             }
 
             /* ===== Bind events ===== */
@@ -10026,7 +10039,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             async function bootstrap() {
                 initTheme();
                 bindThemeToggle();
-                renderUser();
+                // renderUser() вызывается ПОСЛЕ auth() — когда state.tgUser уже заполнен.
                 bindEvents();
                 try {
                     await auth();
@@ -11134,7 +11147,7 @@ def api_buy(telegram_id, tg_user):
             )
         except Exception as _e_user:
             # Если вдруг ON CONFLICT не сработал (старая версия PG без
-            # поддержки, или схема отличается) — откатываем и возвращаем
+            # поддержки, или схема отличается) — откатываем �� возвращаем
             # явную ошибку, НЕ маскируем её под "already_sold".
             integrity_failure["detail"] = f"user_upsert_failed: {_e_user}"
             raise IntegrityError("user_upsert_failed", {}, _e_user)
@@ -11442,7 +11455,7 @@ def api_chats_list(telegram_id, tg_user):
             return jsonify({"ok": True, "chats": [], "unread_total": 0})
 
         thread_ids = [t.id for t in threads]
-        # 2) последние сообщения (по одному на thread — берём MAX(id))
+        # 2) последние сообщения (п�� одному на thread — берём MAX(id))
         last_msg_subq = (
             select(
                 ChatMessage.thread_id.label("tid"),
@@ -12031,7 +12044,7 @@ def _start_hold_releaser_once():
 
 # ===== ФОНОВЫЙ АВТО-ОТЗЫВ (через REVIEW_AUTO_POST_DAYS дней) =====
 #
-# Зачем: покупатель получил аккаунт, всё ок — но отзыв не оставил.
+# Зачем: покупатель по��учил аккаунт, всё ок — но отзыв не оставил.
 # Через REVIEW_AUTO_POST_DAYS дней фоновый планировщик выставляет
 # автоматический 5★-отзыв от его лица, пересчитывает рейтинг продавца
 # и пишет в чат системное сообщение «Отзыв выставлен автоматически».
