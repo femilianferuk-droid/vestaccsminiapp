@@ -28,6 +28,7 @@ import io
 import asyncio
 import threading
 import time
+import tempfile
 import urllib.request
 import urllib.error
 import pathlib
@@ -50,7 +51,7 @@ from dotenv import load_dotenv
 # Telethon — для получения кода подтверждения и выдачи сессии.
 # Те же api_id / api_hash, что и в боте (ОБЩАЯ сессия, общий ключ).
 from telethon import TelegramClient
-from telethon.sessions import StringSession
+from telethon.sessions import StringSession, SQLiteSession
 
 load_dotenv()
 
@@ -158,7 +159,7 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = SECRET_KEY
 app.config["JSON_AS_ASCII"] = False
 
-# ===== МОДЕЛИ (зеркалят схему из bot.py — ОБЩАЯ БД) =====
+# ===== МОДЕЛИ (зеркалят схем�� из bot.py — ОБЩАЯ БД) =====
 Base = declarative_base()
 
 
@@ -310,7 +311,7 @@ class Purchase(Base):
 class Hold(Base):
     """Холд средств продавца после продажи (P2P маркетплейс).
 
-    Бот создаёт эту запись сразу после покупки, а через HOLD_PERIOD_HOURS
+    Бот со��даёт эту запись сразу после покупки, а через HOLD_PERIOD_HOURS
     переводит деньги на баланс продавца. Мини-апп только читает.
     """
     __tablename__ = "holds"
@@ -608,7 +609,7 @@ def _get_telegram_photo_url(tg_id: int) -> Optional[str]:
 
     url: Optional[str] = None
     try:
-        # 1) getUserProfilePhotos — берём одну самую свежую фотку
+        # 1) getUserProfilePhotos — берём од��у самую свежую фотку
         photos_url = (
             f"https://api.telegram.org/bot{BOT_TOKEN}"
             f"/getUserProfilePhotos?user_id={int(tg_id)}&limit=1&offset=0"
@@ -971,7 +972,7 @@ _PHONE_PREFIX_COUNTRY = {
     "676": "Тонга", "677": "Соломоновы Острова", "678": "Вануату",
     "679": "Фиджи", "680": "Палау", "681": "Уоллис и Футуна",
     "682": "Острова Кука", "683": "Ниуэ", "685": "Самоа", "686": "Кирибати",
-    "687": "Новая Каледония", "688": "Тувалу", "689": "Французская Полинезия",
+    "687": "Новая Каледония", "688": "Тувалу", "689": "Французская Полине��ия",
     "690": "Токелау", "691": "Федеративные Штаты Микронезии",
     "692": "Маршалловы Острова", "850": "КНДР", "852": "Гонконг",
     "853": "Макао", "855": "Камбоджа", "856": "Лаос", "880": "Бангладеш",
@@ -1221,6 +1222,146 @@ def api_sell_account_session(telegram_id, tg_user):
     session = SessionLocal()
     try:
         # Гарантируем наличие user-записи
+        db_user = session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        ).scalar_one_or_none()
+        if not db_user:
+            db_user = User(telegram_id=telegram_id, username=tg_user.get("username"))
+            session.add(db_user)
+            session.commit()
+
+        listing, account = _create_listing_from_session(
+            session, telegram_id, session_str, phone,
+            title, description, price, origin,
+            reg_month=reg_month, reg_year=reg_year,
+            has_premium=has_premium,
+        )
+        commission = round(price * COMMISSION_PERCENT / 100.0, 2)
+        net = round(price - commission, 2)
+        return jsonify({
+            "ok": True,
+            "listing_id": listing.id,
+            "account_id": account.id,
+            "country": account.country,
+            "phone_masked": ("+" + "*" * (len(phone) - 4) + phone[-4:]) if len(phone) > 4 else phone,
+            "commission": commission,
+            "net": net,
+            "has_premium": has_premium,
+        })
+    except Exception as e:
+        try:
+            session.rollback()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": "server_error", "detail": str(e)[:200]}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/sell_account/session_file", methods=["POST"])
+@require_auth
+def api_sell_account_session_file(telegram_id, tg_user):
+    """Загрузка .session файла (SQLite Telethon session) и публикация объявления.
+
+    Принимает multipart/form-data:
+        session_file  — бинарный .session файл (SQLite)
+        title         — название объявления (обязательно, до 100 символов)
+        description   — описание (необязательно, до 1000 символов)
+        price         — цена в ₽ (10..50000)
+        origin        — Авторег | Саморег | Фишинг | Стиллер | пусто
+        reg_month     — месяц регистрации TG-аккаунта (1..12, необязательно)
+        reg_year      — год регистрации (2013..2026, необязательно)
+
+    Алгоритм:
+        1) Сохраняем файл во временный файл (mkstemp).
+        2) Открываем его как SQLiteSession → получаем StringSession через
+           StringSession.save(sqlite_session).
+        3) Прогоняем полученную строку через _validate_session_string.
+        4) При успехе — публикуем Listing через _create_listing_from_session.
+        5) Удаляем временный файл.
+    """
+    # Чтение form-полей
+    title       = (request.form.get("title") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    origin      = (request.form.get("origin") or "").strip() or None
+    try:
+        price = float(request.form.get("price") or 0)
+    except (TypeError, ValueError):
+        price = 0
+
+    def _parse_month(value):
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            return None
+        return n if 1 <= n <= 12 else None
+
+    def _parse_year(value):
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            return None
+        return n if 2013 <= n <= 2026 else None
+
+    reg_month = _parse_month(request.form.get("reg_month"))
+    reg_year  = _parse_year(request.form.get("reg_year"))
+
+    # Валидация полей
+    if not title or len(title) > 100:
+        return jsonify({"ok": False, "error": "bad_title"}), 400
+    if len(description) > 1000:
+        return jsonify({"ok": False, "error": "bad_description"}), 400
+    if price < MIN_LISTING_PRICE or price > MAX_LISTING_PRICE:
+        return jsonify({"ok": False, "error": "bad_price",
+                        "detail": f"Цена от {MIN_LISTING_PRICE:.0f} до {MAX_LISTING_PRICE:.0f}₽"}), 400
+    if origin not in ("Авторег", "Саморег", "Фишинг", "Стиллер", None):
+        return jsonify({"ok": False, "error": "bad_origin"}), 400
+
+    # Файл
+    session_file = request.files.get("session_file")
+    if not session_file:
+        return jsonify({"ok": False, "error": "no_file",
+                        "detail": "Файл .session не передан"}), 400
+
+    filename = session_file.filename or ""
+    if not filename.endswith(".session"):
+        return jsonify({"ok": False, "error": "bad_file_ext",
+                        "detail": "Файл должен иметь расширение .session"}), 400
+
+    # Сохраняем во временный файл
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".session")
+    try:
+        os.close(tmp_fd)
+        session_file.save(tmp_path)
+
+        # Конвертируем SQLiteSession → StringSession
+        try:
+            sqlite_sess = SQLiteSession(tmp_path[:-8])  # SQLiteSession принимает путь БЕЗ .session
+            session_str = StringSession.save(sqlite_sess)
+        except Exception as e:
+            return jsonify({"ok": False, "error": "bad_session_file",
+                            "detail": f"Не удалось прочитать .session файл: {e}"}), 400
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    if not session_str or len(session_str) < 50:
+        return jsonify({"ok": False, "error": "bad_session_file",
+                        "detail": "Файл пустой или не содержит данных сессии"}), 400
+
+    # Валидируем сессию через Telethon
+    valid = _validate_session_string(session_str)
+    if not valid["ok"]:
+        return jsonify({"ok": False, "error": "invalid_session",
+                        "detail": valid.get("error", "")}), 400
+
+    phone = valid["phone"]
+    has_premium = bool(valid.get("premium", False))
+
+    session = SessionLocal()
+    try:
         db_user = session.execute(
             select(User).where(User.telegram_id == telegram_id)
         ).scalar_one_or_none()
@@ -1580,7 +1721,7 @@ def api_sell_account_phone_2fa(telegram_id, tg_user):
 @app.route("/api/sell_account/phone/cancel", methods=["POST"])
 @require_auth
 def api_sell_account_phone_cancel(telegram_id, tg_user):
-    """Отменяет процесс входа по телефону (закрывает клиент)."""
+    """Отменяет процесс входа п�� телефону (закрывает клиент)."""
     pending = _SELL_PENDING.pop(telegram_id, None)
     if pending and pending.get("client"):
         try:
@@ -3929,7 +4070,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         .item-chat-btn .icb-emoji { font-size: 14px; line-height: 1; }
         /* ====== Описание аккаунта в детальной модалке — редизайн ======
            Более «продающий» hero-блок: акцентный фон, крупный текст,
-           подчёркнутый заголовок, аккуратный разделитель. Контент,
+           подчёркнутый заголовок, аккуратный разделитель. Конте��т,
            который рисуется внутрь (см. .item-description-grid ниже),
            живёт на подсветке по строкам — глаз сразу видит ключевые
            плюшки аккаунта, даже если продавец не оставил текста. */
@@ -4183,7 +4324,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
         /* Карточки каталога: лёгкий sheen при наведении
            (имитация «радара» — пробегающее свечение слева направо).
-           Удалён по просьбе — оставляем .card просто .card без декора. */
+           Удалён по просьбе — оставляем .card п��осто .card без декора. */
 
         /* Шапка: живой градиент (медленное смещение оттенков) */
         .app-header {
@@ -4587,9 +4728,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div class="sell-info">
             <div class="sell-info-row"><b>Как это работает:</b></div>
             <div class="sell-info-row">1️⃣ Укажите <b>название</b>, <b>описание</b>, <b>происхождение</b> и <b>цену</b></div>
-            <div class="sell-info-row">2️⃣ Нажмите <b>«Далее»</b> и введите <b>номер телефона</b> аккаунта</div>
-            <div class="sell-info-row">3️⃣ Введите <b>код</b>, который придёт в Telegram на этот номер</div>
-            <div class="sell-info-row">4️⃣ Объявление появится в каталоге</div>
+            <div class="sell-info-row">2️⃣ Нажмите <b>«Далее»</b> — выберите <b>номер + код</b> или загрузите <b>.session файл</b></div>
+            <div class="sell-info-row">3️⃣ Объявление появится в каталоге</div>
             <div class="sell-info-row" style="margin-top: 6px;">💰 Комиссия платформы: <b id="sellCommission">7%</b></div>
             <div class="sell-info-row">⏳ Деньги в холде: <b id="sellHold">24 ч.</b> после продажи</div>
         </div>
@@ -4674,44 +4814,84 @@ INDEX_HTML = r"""<!DOCTYPE html>
             <div class="sell-hint" id="sellStep1Error" style="color:#ef4444; margin-top:6px; display:none;"></div>
         </div>
 
-        <!-- ===== ШАГ 2: ввод номера → код → Submit (вручную) ===== -->
+        <!-- ===== ШАГ 2: выбор режима + ввод данных ===== -->
         <div class="sell-form-card" id="sellStep2" style="display:none;">
             <h3><span class="sell-step-num">2</span>Вход в аккаунт</h3>
 
-            <label class="sell-label">Номер телефона</label>
-            <input class="sell-input" id="sellPhone" type="tel" placeholder="+79001234567">
-            <div class="sell-hint">В международном формате с «+». На этот номер придёт код Telegram.</div>
-
-            <button type="button" class="btn-primary" id="sellPhoneSendBtn" style="margin-top: 14px;">
-                <span>📨</span><span>Отправить код</span>
-            </button>
-
-            <div id="sellCodeWrap" style="display:none; margin-top: 18px;">
-                <label class="sell-label">Код подтверждения</label>
-                <input class="sell-input sell-code-input" id="sellCode" type="text"
-                       inputmode="numeric" pattern="\d{5}" maxlength="5" placeholder="00000"
-                       autocomplete="one-time-code">
-                <div class="sell-hint">Код придёт в Telegram на указанный номер. Ровно 5 цифр.</div>
-
-                <button type="button" class="btn-primary" id="sellPublishBtn" style="margin-top: 14px;">
-                    <span id="sellPublishBtnText">Подтвердить</span>
+            <!-- Переключатель режима: номер+код / .session файл -->
+            <div class="sell-mode-tabs" role="tablist" aria-label="Способ добавления аккаунта">
+                <button type="button" class="sell-mode-tab active" id="sellModeTabPhone"
+                        role="tab" aria-selected="true" aria-controls="sellPhoneSection"
+                        data-mode="phone">
+                    📱 Номер + код
+                </button>
+                <button type="button" class="sell-mode-tab" id="sellModeTabFile"
+                        role="tab" aria-selected="false" aria-controls="sellFileSection"
+                        data-mode="file">
+                    📂 .session файл
                 </button>
             </div>
 
-            <!-- 2FA (показывается бэкендом, если аккаунт защищён паролем) -->
-            <div id="sell2faWrap" style="display:none; margin-top: 14px;">
-                <label class="sell-label">Пароль 2FA (облачный пароль)</label>
-                <input class="sell-input" id="sell2fa" type="password" placeholder="••••••••">
-                <div class="sell-hint">Аккаунт защищён 2FA. Введите облачный пароль и снова нажмите «Подтвердить».</div>
-                <button type="button" class="btn-primary" id="sellPublish2faBtn" style="margin-top: 14px;">
-                    <span id="sellPublish2faBtnText">Подтвердить 2FA</span>
+            <!-- ---- Режим: номер + код ---- -->
+            <div id="sellPhoneSection" role="tabpanel" aria-labelledby="sellModeTabPhone">
+                <label class="sell-label">Номер телефона</label>
+                <input class="sell-input" id="sellPhone" type="tel" placeholder="+79001234567">
+                <div class="sell-hint">В международном формате с «+». На этот номер придёт код Telegram.</div>
+
+                <button type="button" class="btn-primary" id="sellPhoneSendBtn" style="margin-top: 14px;">
+                    <span>📨</span><span>Отправить код</span>
+                </button>
+
+                <div id="sellCodeWrap" style="display:none; margin-top: 18px;">
+                    <label class="sell-label">Код подтверждения</label>
+                    <input class="sell-input sell-code-input" id="sellCode" type="text"
+                           inputmode="numeric" pattern="\d{5}" maxlength="5" placeholder="00000"
+                           autocomplete="one-time-code">
+                    <div class="sell-hint">Код придёт в Telegram на указанный номер. Ровно 5 цифр.</div>
+
+                    <button type="button" class="btn-primary" id="sellPublishBtn" style="margin-top: 14px;">
+                        <span id="sellPublishBtnText">Подтвердить</span>
+                    </button>
+                </div>
+
+                <!-- 2FA (показывается бэкендом, если аккаунт защищён паролем) -->
+                <div id="sell2faWrap" style="display:none; margin-top: 14px;">
+                    <label class="sell-label">Пароль 2FA (облачный пароль)</label>
+                    <input class="sell-input" id="sell2fa" type="password" placeholder="••••••••">
+                    <div class="sell-hint">Аккаунт защищён 2FA. Введите облачный пароль и снова нажмите «Подтвердить».</div>
+                    <button type="button" class="btn-primary" id="sellPublish2faBtn" style="margin-top: 14px;">
+                        <span id="sellPublish2faBtnText">Подтвердить 2FA</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ---- Режим: .session файл ---- -->
+            <div id="sellFileSection" role="tabpanel" aria-labelledby="sellModeTabFile" style="display:none;">
+                <!-- Drag-and-drop / click зона -->
+                <div class="sell-file-zone" id="sellFileZone" tabindex="0" role="button"
+                     aria-label="Нажмите или перетащите .session файл для загрузки">
+                    <span class="file-emoji">📂</span>
+                    <span>Нажмите или перетащите <b>.session</b> файл сюда</span>
+                    <span class="file-name" id="sellFileName"></span>
+                </div>
+                <!-- Скрытый file input -->
+                <input type="file" id="sellFileInput" accept=".session"
+                       style="display:none;" aria-hidden="true">
+                <div class="sell-hint" style="margin-top: 8px;">
+                    Принимаются только файлы Telethon с расширением <b>.session</b>.
+                    Файл будет проверен на активность перед публикацией.
+                </div>
+
+                <button type="button" class="btn-primary" id="sellFilePublishBtn"
+                        style="margin-top: 14px;" disabled>
+                    <span id="sellFilePublishBtnText">Проверить и опубликовать</span>
                 </button>
             </div>
 
             <div class="sell-hint" id="sellStep2Error" style="color:#ef4444; margin-top:10px; display:none;"></div>
 
             <button type="button" class="btn-secondary" id="sellBackBtn" style="margin-top: 14px;">
-                ← Назад
+                &#8592; Назад
             </button>
         </div>
 
@@ -6401,7 +6581,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 phoneSent: false,         // код уже отправлен на телефон?
                 needs2fa: false,          // нужен ли 2FA после кода?
                 busy: false,
-                step: 1,                  // 1 — параметры, 2 — телефон/код
+                step: 1,                  // 1 — параметры, 2 — телефон/код/файл
+                mode: 'phone',            // 'phone' | 'file'
+                sessionFile: null,        // File-объект загруженного .session
             };
 
             function sellReadForm() {
@@ -6516,11 +6698,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 document.getElementById('sellStep1').style.display = 'none';
                 document.getElementById('sellStep2').style.display = '';
                 updateSellSummary();
+                // Убедимся, что активный режим отображается корректно
+                switchSellMode(sellState.mode, false);
                 // Прокрутить к началу формы
                 window.scrollTo({ top: 0, behavior: 'smooth' });
                 setTimeout(() => {
-                    const ph = document.getElementById('sellPhone');
-                    if (ph) ph.focus();
+                    if (sellState.mode === 'phone') {
+                        const ph = document.getElementById('sellPhone');
+                        if (ph) ph.focus();
+                    }
                 }, 250);
             }
 
@@ -6670,6 +6856,122 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 }
             }
 
+            /* ===== Переключение режима шага 2: номер+код / .session файл ===== */
+            function switchSellMode(mode, resetFileState) {
+                if (resetFileState === undefined) resetFileState = true;
+                sellState.mode = mode;
+
+                const tabPhone = document.getElementById('sellModeTabPhone');
+                const tabFile  = document.getElementById('sellModeTabFile');
+                const secPhone = document.getElementById('sellPhoneSection');
+                const secFile  = document.getElementById('sellFileSection');
+
+                if (tabPhone) {
+                    tabPhone.classList.toggle('active', mode === 'phone');
+                    tabPhone.setAttribute('aria-selected', mode === 'phone' ? 'true' : 'false');
+                }
+                if (tabFile) {
+                    tabFile.classList.toggle('active', mode === 'file');
+                    tabFile.setAttribute('aria-selected', mode === 'file' ? 'true' : 'false');
+                }
+                if (secPhone) secPhone.style.display = mode === 'phone' ? '' : 'none';
+                if (secFile)  secFile.style.display  = mode === 'file'  ? '' : 'none';
+
+                if (resetFileState) {
+                    // Сброс состояния файловой зоны при переключении
+                    sellState.sessionFile = null;
+                    const fileInput = document.getElementById('sellFileInput');
+                    if (fileInput) fileInput.value = '';
+                    const fileZone = document.getElementById('sellFileZone');
+                    if (fileZone) {
+                        fileZone.classList.remove('drag');
+                        const nameEl = document.getElementById('sellFileName');
+                        if (nameEl) { nameEl.textContent = ''; nameEl.className = 'file-name'; }
+                    }
+                    const pubBtn = document.getElementById('sellFilePublishBtn');
+                    if (pubBtn) pubBtn.disabled = true;
+                }
+
+                showStep2Error('');
+            }
+
+            /* ===== Обработка выбора/drag .session файла ===== */
+            function onSessionFileSelected(file) {
+                const nameEl = document.getElementById('sellFileName');
+                const pubBtn = document.getElementById('sellFilePublishBtn');
+
+                if (!file) {
+                    sellState.sessionFile = null;
+                    if (nameEl) { nameEl.textContent = ''; nameEl.className = 'file-name'; }
+                    if (pubBtn) pubBtn.disabled = true;
+                    return;
+                }
+
+                if (!file.name.endsWith('.session')) {
+                    sellState.sessionFile = null;
+                    if (nameEl) { nameEl.textContent = 'Неверное расширение — нужен .session файл'; nameEl.className = 'file-name bad'; }
+                    if (pubBtn) pubBtn.disabled = true;
+                    showStep2Error('Файл должен иметь расширение .session');
+                    return;
+                }
+
+                sellState.sessionFile = file;
+                if (nameEl) { nameEl.textContent = file.name; nameEl.className = 'file-name ok'; }
+                if (pubBtn) pubBtn.disabled = false;
+                showStep2Error('');
+            }
+
+            /* ===== Отправка .session файла на сервер ===== */
+            async function submitSellFile() {
+                if (sellState.busy) return;
+                if (!sellState.sessionFile) {
+                    showStep2Error('Выберите .session файл');
+                    return;
+                }
+
+                const { title, description, price, regMonth, regYear } = sellReadForm();
+                showStep2Error('');
+
+                sellState.busy = true;
+                const btn = document.getElementById('sellFilePublishBtn');
+                const btnText = document.getElementById('sellFilePublishBtnText');
+                if (btn) btn.disabled = true;
+                const oldText = btnText ? btnText.textContent : '';
+                if (btnText) btnText.innerHTML = '<span class="sell-loader"></span>Проверяем…';
+
+                try {
+                    const fd = new FormData();
+                    fd.append('session_file', sellState.sessionFile);
+                    fd.append('title', title);
+                    fd.append('description', description);
+                    fd.append('price', String(price));
+                    fd.append('origin', sellState.origin || '');
+                    if (regMonth !== null) fd.append('reg_month', String(regMonth));
+                    if (regYear  !== null) fd.append('reg_year',  String(regYear));
+
+                    const headers = {};
+                    if (state.initData) headers['X-Init-Data'] = state.initData;
+
+                    const resp = await fetch('/api/sell_account/session_file', {
+                        method: 'POST',
+                        headers,
+                        body: fd,
+                    });
+                    const data = await resp.json().catch(() => ({ ok: false, error: 'bad_json' }));
+                    if (!resp.ok || !data.ok) {
+                        showStep2Error('Ошибка: ' + (data.detail || data.error || 'Неизвестная ошибка'));
+                        return;
+                    }
+                    onListingPublished(data);
+                } catch (e) {
+                    showStep2Error('Сеть: ' + e.message);
+                } finally {
+                    sellState.busy = false;
+                    if (btn) btn.disabled = !sellState.sessionFile;
+                    if (btnText) btnText.textContent = oldText;
+                }
+            }
+
             function onListingPublished(data) {
                 showToast(
                     '✅ Объявление #' + data.listing_id + ' опубликовано! ' +
@@ -6702,6 +7004,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 sellState.needs2fa = false;
                 sellState.busy = false;
                 sellState.step = 1;
+                sellState.mode = 'phone';
+                sellState.sessionFile = null;
 
                 document.getElementById('sellTitle').value = '';
                 document.getElementById('sellDescription').value = '';
@@ -6709,6 +7013,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 document.getElementById('sellPhone').value = '';
                 document.getElementById('sellCode').value = '';
                 document.getElementById('sell2fa').value = '';
+
+                // Сброс файлового input
+                const fileInput = document.getElementById('sellFileInput');
+                if (fileInput) fileInput.value = '';
+                const fileZone = document.getElementById('sellFileZone');
+                if (fileZone) fileZone.classList.remove('drag');
+                const fileNameEl = document.getElementById('sellFileName');
+                if (fileNameEl) { fileNameEl.textContent = ''; fileNameEl.className = 'file-name'; }
+                const filePublishBtn = document.getElementById('sellFilePublishBtn');
+                if (filePublishBtn) filePublishBtn.disabled = true;
 
                 // Уберём подсветку invalid
                 ['sellTitle', 'sellDescription', 'sellPrice'].forEach((id) => {
@@ -6725,6 +7039,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 document.querySelectorAll('#sellOriginGrid .sell-origin-btn').forEach((b) => {
                     b.classList.toggle('active', false);
                 });
+
+                // Сброс вкладок режима
+                const tabPhone = document.getElementById('sellModeTabPhone');
+                const tabFile  = document.getElementById('sellModeTabFile');
+                const secPhone = document.getElementById('sellPhoneSection');
+                const secFile  = document.getElementById('sellFileSection');
+                if (tabPhone) { tabPhone.classList.add('active'); tabPhone.setAttribute('aria-selected', 'true'); }
+                if (tabFile)  { tabFile.classList.remove('active'); tabFile.setAttribute('aria-selected', 'false'); }
+                if (secPhone) secPhone.style.display = '';
+                if (secFile)  secFile.style.display  = 'none';
 
                 // Возвращаемся к шагу 1
                 document.getElementById('sellStep1').style.display = '';
@@ -6857,6 +7181,43 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 // Cancel / reset
                 const cancelBtn = document.getElementById('sellCancelBtn');
                 if (cancelBtn) cancelBtn.addEventListener('click', cancelSellFlow);
+
+                // ---- Переключатель режима (вкладки) ----
+                document.querySelectorAll('.sell-mode-tab').forEach((tab) => {
+                    tab.addEventListener('click', () => switchSellMode(tab.dataset.mode));
+                });
+
+                // ---- Файловая зона: клик → открыть file picker ----
+                const fileZone = document.getElementById('sellFileZone');
+                const fileInput = document.getElementById('sellFileInput');
+                if (fileZone && fileInput) {
+                    fileZone.addEventListener('click', () => fileInput.click());
+                    fileZone.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+                    });
+
+                    // Drag & drop
+                    fileZone.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        fileZone.classList.add('drag');
+                    });
+                    fileZone.addEventListener('dragleave', () => fileZone.classList.remove('drag'));
+                    fileZone.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        fileZone.classList.remove('drag');
+                        const file = e.dataTransfer?.files?.[0] || null;
+                        onSessionFileSelected(file);
+                    });
+
+                    // Выбор через диалог
+                    fileInput.addEventListener('change', () => {
+                        onSessionFileSelected(fileInput.files?.[0] || null);
+                    });
+                }
+
+                // ---- Кнопка «Проверить и опубликовать» (.session режим) ----
+                const filePublishBtn = document.getElementById('sellFilePublishBtn');
+                if (filePublishBtn) filePublishBtn.addEventListener('click', submitSellFile);
             }
 
             /* ===== API ===== */
@@ -7261,7 +7622,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     // был «номер телефона» в моноширинном стиле.
                     //
                     // data-seller-id нужен, чтобы обработчик клика по
-                    // аватару/нику открыл публичный профиль этого продавца
+                    // аватару/нику открыл публичный пр��филь этого продавца
                     // (а не карточку товара, как делает клик по самой карточке).
                     const sellerIdForProfile = it.seller_id ? Number(it.seller_id) : 0;
                     const sellerLineHtml =
@@ -7491,7 +7852,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         avatarEl.textContent = sellerInitial;
                     }
                     // data-seller-id нужен, чтобы обработчик клика открыл
-                    // публичный профиль. Если продавец не известен (платформенный
+                    // публичный профиль. Если прода��ец не известен (платформенный
                     // лот) — клик игнорируется.
                     const itemSellerId = it.seller_id ? Number(it.seller_id) : 0;
                     if (itemSellerId) {
@@ -8210,7 +8571,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         showProfilePromoMsg(translatePromoError(err), 'error');
                     }
                 } catch (e) {
-                    showProfilePromoMsg('Ошибка сети. Попробуйте ещё раз.', 'error');
+                    showProfilePromoMsg('Ошибка сети. Попр��буйте ещё раз.', 'error');
                 } finally {
                     dom.profilePromoBtn.disabled = false;
                     dom.profilePromoBtn.textContent = oldText;
@@ -8441,7 +8802,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             // так как пополнение делается в боте, а не в мини-аппе.
             function topupGoToBot() {
                 openBotDirect('deposit');
-                showToast('Открываем б��та для пополнения…', 'success');
+                showToast('Открываем б��та для пополне��ия…', 'success');
             }
 
             /* ===== Bind events ===== */
@@ -8782,7 +9143,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 if (state.origin && state.origin !== 'all') params.set('origin', state.origin);
                 if (state.priceSort && state.priceSort !== 'default') params.set('sort', state.priceSort);
                 // Фильтр по дате создания аккаунта (от и до) — дублируем с loadCatalog(),
-                // чтобы фоновый поллинг каталога тоже учитывал выбранный диапазон.
+                // чтобы фоновый поллинг каталога тоже у��итывал выбранный диапазон.
                 if (state.createdFromMonth && state.createdFromMonth !== 'all') params.set('from_month', state.createdFromMonth);
                 if (state.createdFromYear  && state.createdFromYear  !== 'all') params.set('from_year',  state.createdFromYear);
                 if (state.createdToMonth   && state.createdToMonth   !== 'all') params.set('to_month',   state.createdToMonth);
