@@ -1,0 +1,13 @@
+{
+  "name": "vestaccs-miniapp",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pip install -r requirements.txt -q && python app.py",
+    "start": "gunicorn app:app --bind 0.0.0.0:5000 --workers 1 --timeout 120",
+    "build": "pip install -r requirements.txt -q"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
