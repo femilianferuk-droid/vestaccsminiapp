@@ -428,7 +428,7 @@ if _db_url.startswith("postgresql"):
         "pool_size": 5,
         "max_overflow": 10,
         "pool_timeout": 5,
-        "connect_args": {"connect_timeout": 5},
+        "connect_args": {"connect_timeout": 5, "sslmode": "disable"},
     })
 engine = create_engine(_db_url, **_engine_options)
 SessionLocal = scoped_session(sessionmaker(bind=engine, expire_on_commit=False))
@@ -937,7 +937,7 @@ REVIEW_AUTO_POST_DAYS = 7
 # Как часто фоновый поток проверяет, не пора ли выставить авто-отзыв.
 # 1 час — баланс между свежестью отзыва и нагрузкой на БД.
 REVIEW_AUTO_CHECK_INTERVAL = 60 * 60
-MIN_LISTING_PRICE = 10.0    # минимальная цена объявления
+MIN_LISTING_PRICE = 10.0    # минимальн��я цена объявления
 MAX_LISTING_PRICE = 50000.0 # максимальная цена
 
 # In-memory state для phone-flow (как pending_auth в bot.py).
@@ -1558,7 +1558,7 @@ def api_sell_account_phone_verify(telegram_id, tg_user):
         except (TypeError, ValueError):
             price = 0
         origin = (draft.get("origin") or "").strip() or None
-        # Месяц/год регистрации — могут быть null, тогда просто не пишем
+        # Месяц/год регистрац��и — могут быть null, тогда просто не пишем
         # в Account (там тоже NULL). Это нормальный случай: продавец
         # не обязан указывать дату регистрации.
         try:
@@ -1627,7 +1627,7 @@ def api_sell_account_phone_2fa(telegram_id, tg_user):
     payload = request.get_json(silent=True) or {}
     password = (payload.get("password") or "").strip()
 
-    # Пароль 2FA не пустой и не короче 1 символа (Telethon сам решит)
+    # Пароль 2FA не пу��той и не короче 1 символа (Telethon сам решит)
     if not password:
         return jsonify({"ok": False, "error": "bad_password",
                         "detail": "Введите пароль 2FA"}), 400
@@ -4691,7 +4691,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 background-color: var(--bg);
                 min-height: 100vh;
             }
-            /* Шапка течёт в потоке центрированного body — никаких left/transform */
+            /* Ша��ка течёт в потоке центрированного body — никаких left/transform */
             .app-header {
                 left: auto;
                 transform: none;
@@ -5243,7 +5243,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             <div class="sell-hint">
                 Укажите месяц и год, когда был зарегистрирован этот Telegram-аккаунт.
                 Покупатель увидит «Регистрация: …» в описании объявления.
-                Можно оставить пустым.
+                Можно ост��вить пустым.
             </div>
 
             <label class="sell-label">Происх��ждение аккаунта</label>
@@ -5389,7 +5389,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
         <div class="empty-state hidden" id="chatsEmpty">
             <div class="empty-emoji">💬</div>
-            <p>У вас пока нет диалогов</p>
+            <p>У ва�� пока нет диалогов</p>
             <p class="empty-sub">Откройте карточку аккаунта и нажмите «Написать продавцу»</p>
         </div>
     </div>
@@ -5544,7 +5544,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 </div>
             </div>
 
-            <!-- Новая секция: дата создания аккаунта (от и до: месяц + год) -->
+            <!-- Новая се��ция: дата создания аккаунта (от и до: месяц + год) -->
             <div class="filter-modal-section">
                 <div class="filter-modal-label">📅 Дата создания аккаунта</div>
                 <div class="filter-date-row">
@@ -7178,7 +7178,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 if (!title) return { ok: false, msg: 'Введите название объявления' };
                 if (title.length > 100) return { ok: false, msg: 'Название — максимум 100 символов' };
                 if (description.length > 1000) return { ok: false, msg: 'Описание — максимум 1000 символов' };
-                if (!price || price < 10) return { ok: false, msg: 'Минимальная цена — 10₽' };
+                if (!price || price < 10) return { ok: false, msg: '��инимальная цена — 10₽' };
                 if (price > 50000) return { ok: false, msg: 'Максимальная цена — 50 000₽' };
                 if (!sellState.origin) return { ok: false, msg: 'Выберите происхождение' };
                 // Месяц/год — необязательные. Если оба пустые — ок.
@@ -9538,7 +9538,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     // id не пришёл из чата — берём первую «отзывопригодную»
                     // покупку юзера. Подгружаем /api/purchases и перебираем.
                     if (dom.reviewMsg) {
-                        dom.reviewMsg.textContent = 'Определяем покупку…';
+                        dom.reviewMsg.textContent = 'Опред��ляем покупку…';
                         dom.reviewMsg.className = 'review-msg';
                     }
                     try {
@@ -10051,7 +10051,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     });
                 } catch (error) {
                     showLoader(false);
-                    renderLoadFailure('Приложение не смогло запуститься. Попробуйте ещё раз.');
+                    renderLoadFailure('Прило��ение не смогло запуститься. Попробуйте ещё раз.');
                 }
             }
 
@@ -11148,7 +11148,7 @@ def api_buy(telegram_id, tg_user):
         except Exception as _e_user:
             # Если вдруг ON CONFLICT не сработал (старая версия PG без
             # поддержки, или схема отличается) — откатываем �� возвращаем
-            # явную ошибку, НЕ маскируем её под "already_sold".
+            # явную оши��ку, НЕ маскируем её под "already_sold".
             integrity_failure["detail"] = f"user_upsert_failed: {_e_user}"
             raise IntegrityError("user_upsert_failed", {}, _e_user)
 
@@ -11268,7 +11268,7 @@ def api_buy(telegram_id, tg_user):
                 )
                 session.add(new_hold)
 
-        # ===== Авто-создание чата с продавцом (FunPay-стиль) =====
+        # ===== Авто-��оздание чата с продавцом (FunPay-стиль) =====
         # Если у аккаунта есть продавец и покупатель ≠ продавец — создаём
         # (или переиспользуем) диалог между ними и кладём туда системное
         # сообщение о покупке ОТ ЛИЦА ВЕСТ АККАУНТ БОТА (sender_id = 0).
@@ -11878,7 +11878,7 @@ def api_bot_avatar():
 # ===== ХЕЛПЕР: ВСТАВИТЬ СООБЩЕНИЕ ОТ «VEST ACCOUNT» В ЧАТ =====
 def _insert_bot_message(session, thread_id: int, text: str, purchase_id: int = None) -> int:
     """Создаёт запись ChatMessage от имени бота (sender_id = BOT_SENDER_ID)
-    в ука��анном thread-е и обновляет last_message_at потока.
+    в ука��анном thread-е и обно��ляет last_message_at потока.
 
     Возвращает id созданного сообщения.
     """
@@ -12150,7 +12150,7 @@ def _post_auto_reviews_sync() -> int:
                 session.add(review)
 
                 # Пересчитываем рейтинг продавца (честно, через COUNT/AVG).
-                # Та же логика, что и в api_post_review — инкрементальный
+                # Та же логика, что и в api_post_review — инкреме��тальный
                 # пересчёт ломается на default-ах (rating=5.0, count=0).
                 seller = session.execute(
                     select(User).where(User.telegram_id == account.seller_id)
