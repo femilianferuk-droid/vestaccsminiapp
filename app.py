@@ -150,7 +150,7 @@ _BOT_AVATAR_PATH = pathlib.Path(__file__).resolve().parent / \
     "Gemini_Generated_Image_w0v6n4w0v6n4w0v6.png"
 
 # Маркер кнопок в тексте сообщений бота. Фронт парсит эти токены и
-# рендерит их как настоящие кнопки под пузырьком. Формат:
+# рендерит их как настоящие кнопки под ��узырьком. Формат:
 #   [[BTN:<action>|<label>]]            — простая кнопка (например, open_dispute)
 #   [[BTN:<action>:<param>|<label>]]     — кнопка с параметром (например,
 #                                         open_review:42 — оставить отзыв
@@ -221,6 +221,9 @@ class Account(Base):
     # «Телеграмм премиум». Не путать с Premium-подпиской у покупателя
     # — это флаг САМОГО аккаунта, который продаётся.
     has_premium = Column(Boolean, default=False, nullable=False)
+    # Nullable: False = ограничений нет, True = спамблок есть,
+    # None = @SpamBot не ответил или ответ не удалось распознать.
+    has_spamblock = Column(Boolean, nullable=True)
 
 
 class Listing(Base):
@@ -535,6 +538,21 @@ def _ensure_account_premium_column():
             pass
 
 
+def _ensure_account_spamblock_column():
+    """Добавляет nullable-статус проверки аккаунта через @SpamBot."""
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                "ALTER TABLE accounts "
+                "ADD COLUMN IF NOT EXISTS has_spamblock BOOLEAN NULL"
+            )
+    except Exception as _e:
+        try:
+            app.logger.warning("accounts.has_spamblock migration failed: %s", _e)
+        except Exception:
+            pass
+
+
 def _ensure_review_is_auto_column():
     """Добавляем колонку reviews.is_auto, если её ещё нет.
 
@@ -562,6 +580,7 @@ _ensure_chat_tables()
 _ensure_user_first_name_column()
 _ensure_account_reg_columns()
 _ensure_account_premium_column()
+_ensure_account_spamblock_column()
 _ensure_review_is_auto_column()
 
 
@@ -942,7 +961,7 @@ _PHONE_PREFIX_COUNTRY = {
     "92": "Пакистан", "93": "Афганистан", "94": "Шри-Ланка",
     "95": "Мьянма", "98": "Иран", "211": "Южный Судан", "212": "Марокко",
     "213": "Алжир", "216": "Тунис", "218": "Ливия", "220": "Гамбия",
-    "221": "Сенегал", "222": "��авритания", "223": "Мали", "224": "Гвинея",
+    "221": "Сенегал", "222": "����авритания", "223": "Мали", "224": "Гвинея",
     "225": "Кот-д'Ивуар", "226": "Буркина-Фасо", "227": "Нигер",
     "228": "Того", "229": "Бенин", "230": "Маврикий", "231": "Либерия",
     "232": "Сьерра-Леоне", "233": "Гана", "234": "Нигерия", "235": "Чад",
@@ -1009,6 +1028,57 @@ def _detect_country_by_phone(phone: str) -> str:
     return "США"
 
 
+def _classify_spambot_reply(reply: str) -> Optional[bool]:
+    """Возвращает False без ограничений, True при спамблоке, None если неясно."""
+    normalized = " ".join((reply or "").casefold().split())
+    if not normalized:
+        return None
+
+    no_limits_markers = (
+        "свободен от каких-либо ограничений",
+        "никаких ограничений на ваш аккаунт не наложено",
+        "ограничений на ваш аккаунт нет",
+        "no limits are currently applied",
+        "free as a bird",
+        "your account is free from any restrictions",
+    )
+    if any(marker in normalized for marker in no_limits_markers):
+        return False
+
+    limited_markers = (
+        "ваш аккаунт был ограничен",
+        "аккаунт ограничен",
+        "к сожалению, некоторые пользователи telegram пожаловались",
+        "вы не можете отправлять сообщения",
+        "ограничения будут автоматически сняты",
+        "limited until",
+        "your account is now limited",
+        "some users reported your messages",
+        "you won't be able to send messages",
+        "you will only be able to send messages",
+    )
+    if any(marker in normalized for marker in limited_markers):
+        return True
+    return None
+
+
+async def _check_spamblock_async(client: TelegramClient) -> Optional[bool]:
+    """Пишет /start в @SpamBot и анализирует новый ответ через 2 секунды."""
+    try:
+        bot = await client.get_entity("spambot")
+        previous = await client.get_messages(bot, limit=1)
+        previous_id = previous[0].id if previous else 0
+        await client.send_message(bot, "/start")
+        await asyncio.sleep(2)
+        messages = await client.get_messages(bot, limit=10)
+        for message in messages:
+            if message.id > previous_id and not getattr(message, "out", False):
+                return _classify_spambot_reply(message.message or "")
+    except Exception:
+        return None
+    return None
+
+
 async def _validate_session_string_async(session_str: str) -> dict:
     """Проверка .session: подключается через Telethon, извлекает phone.
 
@@ -1048,10 +1118,12 @@ async def _validate_session_string_async(session_str: str) -> dict:
             premium_flag = bool(getattr(me, 'premium', False))
         except Exception:
             premium_flag = False
+        spamblock_status = await _check_spamblock_async(client)
         return {
             'ok': True,
             'phone': '+' + phone,
             'premium': premium_flag,
+            'has_spamblock': spamblock_status,
         }
     except Exception as e:
         return {'ok': False, 'error': f'Ошибка Telethon: {e}'}
@@ -1089,6 +1161,7 @@ def _create_listing_from_session(
     title: str, description: str, price: float, origin: Optional[str],
     reg_month: Optional[int] = None, reg_year: Optional[int] = None,
     has_premium: bool = False,
+    has_spamblock: Optional[bool] = None,
 ) -> tuple:
     """Создаёт/обновляет Account и новый Listing. Возвращает (listing, account).
 
@@ -1127,6 +1200,7 @@ def _create_listing_from_session(
         # Premium-флаг перезаписываем каждый раз: если сессия живая и
         # мы смогли прочитать me — это актуальнее, чем то, что лежит в БД.
         existing.has_premium = bool(has_premium)
+        existing.has_spamblock = has_spamblock
         account = existing
     else:
         account = Account(
@@ -1141,6 +1215,7 @@ def _create_listing_from_session(
             reg_month=reg_month,
             reg_year=reg_year,
             has_premium=bool(has_premium),
+            has_spamblock=has_spamblock,
         )
         session.add(account)
 
@@ -1225,6 +1300,7 @@ def api_sell_account_session(telegram_id, tg_user):
     # Telethon и получили me.premium. Не валим публикацию, если флага
     # нет — просто кладём False.
     has_premium = bool(valid.get("premium", False))
+    has_spamblock = valid.get("has_spamblock")
     session = SessionLocal()
     try:
         # Гарантируем наличие user-записи
@@ -1241,6 +1317,7 @@ def api_sell_account_session(telegram_id, tg_user):
             title, description, price, origin,
             reg_month=reg_month, reg_year=reg_year,
             has_premium=has_premium,
+            has_spamblock=has_spamblock,
         )
         commission = round(price * COMMISSION_PERCENT / 100.0, 2)
         net = round(price - commission, 2)
@@ -1388,6 +1465,11 @@ def api_sell_account_phone_verify(telegram_id, tg_user):
         if not me_phone or me_phone == "+":
             me_phone = phone
 
+        try:
+            has_spamblock = _run_async(_check_spamblock_async(client), timeout=8)
+        except Exception:
+            has_spamblock = None
+
         # Достаём черновик объявления
         draft = pending.get("draft") or {}
         title = (draft.get("title") or "").strip()
@@ -1431,6 +1513,7 @@ def api_sell_account_phone_verify(telegram_id, tg_user):
                 title, description, price, origin,
                 reg_month=reg_month, reg_year=reg_year,
                 has_premium=has_premium,
+                has_spamblock=has_spamblock,
             )
         finally:
             session.close()
@@ -1519,6 +1602,11 @@ def api_sell_account_phone_2fa(telegram_id, tg_user):
         if not me_phone or me_phone == "+":
             me_phone = phone
 
+        try:
+            has_spamblock = _run_async(_check_spamblock_async(client), timeout=8)
+        except Exception:
+            has_spamblock = None
+
         draft = pending.get("draft") or {}
         title = (draft.get("title") or "").strip()
         description = (draft.get("description") or "").strip()
@@ -1557,6 +1645,7 @@ def api_sell_account_phone_2fa(telegram_id, tg_user):
                 title, description, price, origin,
                 reg_month=reg_month, reg_year=reg_year,
                 has_premium=has_premium,
+                has_spamblock=has_spamblock,
             )
         finally:
             session.close()
@@ -1634,6 +1723,7 @@ def api_my_listings(telegram_id, tg_user):
                 "created_at": l.created_at.isoformat() if l.created_at else None,
                 "reg_month": reg_month,
                 "reg_year": reg_year,
+                "has_spamblock": (acc.has_spamblock if acc else None),
             })
         return jsonify({"ok": True, "items": items})
     finally:
@@ -2105,6 +2195,22 @@ INDEX_HTML = r"""<!DOCTYPE html>
             background: rgba(91, 61, 240, 0.08);
             color: var(--indigo-600);
         }
+        .card-meta-badge.spam-clear {
+            background: rgba(22, 163, 74, 0.10);
+            color: #15803d;
+        }
+        .card-meta-badge.spam-blocked {
+            background: rgba(239, 68, 68, 0.11);
+            color: #dc2626;
+        }
+        .item-spam-badge {
+            display: inline-flex; align-items: center;
+            width: fit-content; margin-top: 6px;
+            padding: 5px 11px; border-radius: 999px;
+            font-size: 11.5px; font-weight: 700;
+        }
+        .item-spam-badge.spam-clear { background: rgba(22, 163, 74, 0.10); color: #15803d; }
+        .item-spam-badge.spam-blocked { background: rgba(239, 68, 68, 0.11); color: #dc2626; }
         /* Стиль бейджа страны в meta-строке оставлен как фоллбек,
            но страна теперь показывается отдельной строкой в шапке
            карточки (см. .card-country-line ниже). */
@@ -2987,7 +3093,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             align-items: center;
             line-height: 1;
             font-size: 13px;
-            /* лёгкий «шрифт-галочек» — используем обычные символы,
+            /* лёгкий «шрифт-галочек» — используем обы��ные символы,
                чтобы не зависеть от наличия SVG-шрифта в системе. */
         }
         .chat-ticks.pending {
@@ -5306,7 +5412,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                             body.innerHTML = `
                                 <div class="code-phone" id="codePhone">${escapeHtml(data.phone ? 'Номер: +' + data.phone.replace(/^\\+/, '') : '—')}</div>
                                 <div class="code-big" id="codeValue">${escapeHtml(data.code)}</div>
-                                <div class="code-hint">Код действителен ограниченное время. При необходимости можно запросить повторно.</div>
+                                <div class="code-hint">Код действителен ограниченное время. При необходимости можно запрос��ть повторно.</div>
                             `;
                         }
                         dom.codeModal.classList.remove('hidden');
@@ -6274,7 +6380,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         av.appendChild(img);
                     };
                     img.onerror = () => {
-                        // если Telegram не отдал фото — остаётся initial
+                        // если Telegram не отдал ��ото — остаётся initial
                     };
                 }
 
@@ -6466,7 +6572,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 if (sellState.busy) return;
                 const phone = (document.getElementById('sellPhone')?.value || '').trim();
                 if (!phone || !phone.startsWith('+') || phone.length < 8) {
-                    showStep2Error('Введите номер в формате +79001234567');
+                    showStep2Error('Введите номер в фо��мате +79001234567');
                     return;
                 }
                 showStep2Error('');
@@ -6538,7 +6644,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 const btnText = document.getElementById('sellPublishBtnText');
                 if (pubBtn) pubBtn.disabled = true;
                 const oldText = btnText ? btnText.textContent : '';
-                if (btnText) btnText.innerHTML = '<span class="sell-loader"></span>Проверяем…';
+                if (btnText) btnText.innerHTML = '<span class="sell-loader"></span>Подождите, аккаунт выставляется…';
                 try {
                     const r = await api('/api/sell_account/phone/verify', {
                         method: 'POST',
@@ -6579,7 +6685,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 const btnText = document.getElementById('sellPublish2faBtnText');
                 if (btn) btn.disabled = true;
                 const oldText = btnText ? btnText.textContent : '';
-                if (btnText) btnText.innerHTML = '<span class="sell-loader"></span>Проверяем…';
+                if (btnText) btnText.innerHTML = '<span class="sell-loader"></span>Подождите, аккаунт выставляется…';
                 try {
                     const r = await api('/api/sell_account/phone/2fa', {
                         method: 'POST',
@@ -6693,8 +6799,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
                                     '<div class="mi-price">' + Math.round(it.price) + '₽</div>' +
                                 '</div>' +
                                 '<div class="mi-sub">' +
-                                    '<span class="sell-status-pill ' + status + '">' + (statusLabels[status] || status) + '</span>' +
-                                    '<span>' + escapeHtml(it.country || '—') + '</span>' +
+                    '<span class="sell-status-pill ' + status + '">' + (statusLabels[status] || status) + '</span>' +
+                    spamblockBadgeHtml(it.has_spamblock) +
+                    '<span>' + escapeHtml(it.country || '—') + '</span>' +
+
                                     (it.origin ? '<span>· ' + escapeHtml(it.origin) + '</span>' : '') +
                                     (date ? '<span>· ' + date + '</span>' : '') +
                                 '</div>' +
@@ -6792,12 +6900,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
             async function api(path, options = {}) {
                 const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
                 if (state.initData) headers['X-Init-Data'] = state.initData;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 12000);
                 try {
-                    const resp = await fetch(path, { ...options, headers });
+                    const resp = await fetch(path, { ...options, headers, signal: options.signal || controller.signal });
                     const data = await resp.json().catch(() => ({ ok: false, error: 'bad json' }));
                     return { ok: resp.ok && data.ok, status: resp.status, data };
                 } catch (err) {
-                    return { ok: false, error: err.message };
+                    return {
+                        ok: false,
+                        error: err && err.name === 'AbortError' ? 'request_timeout' : err.message,
+                    };
+                } finally {
+                    clearTimeout(timeoutId);
                 }
             }
 
@@ -6969,28 +7084,30 @@ INDEX_HTML = r"""<!DOCTYPE html>
             }
             async function loadCatalog() {
                 showLoader(true);
-                const params = new URLSearchParams();
-                if (state.country && state.country !== 'all') params.set('country', state.country);
-                if (state.origin && state.origin !== 'all') params.set('origin', state.origin);
-                if (state.priceSort && state.priceSort !== 'default') params.set('sort', state.priceSort);
-                // Фильтр по дате создания аккаунта (от и до)
-                if (state.createdFromMonth && state.createdFromMonth !== 'all') params.set('from_month', state.createdFromMonth);
-                if (state.createdFromYear  && state.createdFromYear  !== 'all') params.set('from_year',  state.createdFromYear);
-                if (state.createdToMonth   && state.createdToMonth   !== 'all') params.set('to_month',   state.createdToMonth);
-                if (state.createdToYear    && state.createdToYear    !== 'all') params.set('to_year',    state.createdToYear);
-                params.set('limit', '100');
+                try {
+                    const params = new URLSearchParams();
+                    if (state.country && state.country !== 'all') params.set('country', state.country);
+                    if (state.origin && state.origin !== 'all') params.set('origin', state.origin);
+                    if (state.priceSort && state.priceSort !== 'default') params.set('sort', state.priceSort);
+                    if (state.createdFromMonth && state.createdFromMonth !== 'all') params.set('from_month', state.createdFromMonth);
+                    if (state.createdFromYear  && state.createdFromYear  !== 'all') params.set('from_year',  state.createdFromYear);
+                    if (state.createdToMonth   && state.createdToMonth   !== 'all') params.set('to_month',   state.createdToMonth);
+                    if (state.createdToYear    && state.createdToYear    !== 'all') params.set('to_year',    state.createdToYear);
+                    params.set('limit', '100');
 
-                const r = await api('/api/catalog?' + params.toString());
-                showLoader(false);
-                if (!r.ok) {
-                    dom.catalog.innerHTML = '';
-                    showEmpty(true);
-                    return;
+                    const r = await api('/api/catalog?' + params.toString());
+                    if (!r.ok) {
+                        dom.catalog.innerHTML = '';
+                        showEmpty(true);
+                        return;
+                    }
+                    state.catalog = r.data.items || [];
+                    state.catalogSig = state.catalog.map((it) => `${it.id}:${it.price}:${it.country}:${String(it.has_spamblock)}`).join('|');
+                    renderCatalog();
+                    updateFilterSummary();
+                } finally {
+                    showLoader(false);
                 }
-                state.catalog = r.data.items || [];
-                state.catalogSig = state.catalog.map((it) => `${it.id}:${it.price}:${it.country}`).join('|');
-                renderCatalog();
-                updateFilterSummary();
             }
 
             /* Рендер сетки фильтров в модалке — всё видно без скролла */
@@ -7099,6 +7216,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 return `${mm}.${yy}`;
             }
 
+            function spamblockBadgeHtml(value) {
+                if (value === false) {
+                    return '<span class="card-meta-badge spam-clear">Без спамблока</span>';
+                }
+                if (value === true) {
+                    return '<span class="card-meta-badge spam-blocked">Есть спамблок</span>';
+                }
+                return '';
+            }
+
             function renderCatalog() {
                 dom.catalog.innerHTML = '';
                 dom.catListCount.textContent = state.catalog.length;
@@ -7148,6 +7275,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
                             `</svg>Сессия проверена</span>`
                         );
                     }
+                    const spamBadge = spamblockBadgeHtml(it.has_spamblock);
+                    if (spamBadge) metaBadges.push(spamBadge);
                     if (it.reg_text) {
                         metaBadges.push(
                             `<span class="card-meta-badge reg" title="Дата регистрации Telegram-аккаунта">` +
@@ -7370,6 +7499,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 }
                 if (premiumBadge) {
                     premiumBadge.style.display = it.has_premium ? '' : 'none';
+                }
+                let spamBadge = document.getElementById('itemSpamBadge');
+                if (!spamBadge) {
+                    const anchor = dom.itemOrigin && dom.itemOrigin.parentNode;
+                    if (anchor) {
+                        spamBadge = document.createElement('div');
+                        spamBadge.id = 'itemSpamBadge';
+                        anchor.appendChild(spamBadge);
+                    }
+                }
+                if (spamBadge) {
+                    const known = it.has_spamblock === true || it.has_spamblock === false;
+                    spamBadge.className = 'item-spam-badge ' + (it.has_spamblock ? 'spam-blocked' : 'spam-clear');
+                    spamBadge.textContent = it.has_spamblock ? 'Есть спамблок' : 'Без спамблока';
+                    spamBadge.style.display = known ? '' : 'none';
                 }
 
                 // Цена + никнейм продавца + рейтинг
@@ -8350,7 +8494,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             // так как пополнение делается в боте, а не в мини-аппе.
             function topupGoToBot() {
                 openBotDirect('deposit');
-                showToast('Открываем бота для пополнения…', 'success');
+                showToast('Открываем б��та для пополнения…', 'success');
             }
 
             /* ===== Bind events ===== */
@@ -8620,7 +8764,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                             const uname = msgBtn.dataset.peerUsername || '';
                             closeModal('userModal');
                             // Используем уже существующий openChatByPeerId —
-                            // он подтянет/создаст чат и откроет модалку диалога.
+                            // он подтянет/создаст чат и откро��т модалку диалога.
                             openChatByPeerId(pid, { username: uname });
                         });
                     }
@@ -8704,7 +8848,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     const freshItems = r.data.items;
 
                     // Лёгкий fingerprint: id|price|country
-                    const sig = freshItems.map((it) => `${it.id}:${it.price}:${it.country}`).join('|');
+                    const sig = freshItems.map((it) => `${it.id}:${it.price}:${it.country}:${String(it.has_spamblock)}`).join('|');
                     if (state.catalogSig === sig) return; // ничего не изменилось
 
                     state.catalog = freshItems;
@@ -8717,19 +8861,25 @@ INDEX_HTML = r"""<!DOCTYPE html>
             }
 
             async function bootstrap() {
-                renderUser();
-                bindEvents();
+                try {
+                    renderUser();
+                    bindEvents();
 
-                await auth();
+                    // Публичный каталог работает и без Telegram initData.
+                    // Сбой авторизации не должен блокировать публичные запросы.
+                    const tasks = [loadCategories(), loadCatalog()];
+                    if (state.initData) tasks.push(auth());
+                    await Promise.allSettled(tasks);
+                    updateFilterSummary();
 
-                // Грузим всё параллельно
-                await Promise.all([loadCategories(), loadCatalog()]);
-                updateFilterSummary();
-
-                // Узнаём username бота
-                api('/api/bot-info').then((r) => {
-                    if (r.ok && r.data.username) state.botUsername = r.data.username;
-                });
+                    api('/api/bot-info').then((r) => {
+                        if (r.ok && r.data.username) state.botUsername = r.data.username;
+                    });
+                } catch (error) {
+                    showEmpty(true);
+                } finally {
+                    showLoader(false);
+                }
             }
 
             if (document.readyState === 'loading') {
@@ -8895,7 +9045,7 @@ def api_me(telegram_id, tg_user):
 
 # ===== API: МОИ ПОКУПКИ =====
 #
-# Идентично логике из bot.py: список покупок юзера + выдача
+# Ид��нтично логике из bot.py: список покупок юзера + выдача
 # кода подтверждения / .session / JSON по id покупки.
 # Все запросы проходят require_auth (initData → telegram_id),
 # и каждый фильтрует покупки по user_id, чтобы чужой код не ушёл.
@@ -9237,7 +9387,7 @@ def api_purchase_code(telegram_id, tg_user, purchase_id):
                 "error": "code_not_found",
                 "phone": account.phone,
                 "hint": "Подождите 1–2 минуты и попробуйте снова. "
-                        "Либо скачайте .session файл и войдите вручную.",
+                        "Либо скачайт�� .session файл и войдите вручную.",
             }), 404
 
         return jsonify({
@@ -9588,6 +9738,7 @@ def api_catalog():
                 # True, если у аккаунта активна платная подписка. Фронт
                 # рисует зелёный бейдж «Телеграмм премиум» на карточке.
                 "has_premium": bool(getattr(a, "has_premium", False)),
+                "has_spamblock": getattr(a, "has_spamblock", None),
             })
         return jsonify({"ok": True, "items": items, "count": len(items)})
     finally:
@@ -10181,8 +10332,10 @@ def api_user_public(user_telegram_id, telegram_id, tg_user):
                 "status": "active",
                 "created_at": listing.created_at.isoformat() if listing.created_at else None,
                 "is_verified": bool(account.is_verified),
-                "has_premium": bool(account.has_premium),
-                "reg_month": account.reg_month,
+            "has_premium": bool(account.has_premium),
+            "has_spamblock": account.has_spamblock,
+            "reg_month": account.reg_month,
+
                 "reg_year": account.reg_year,
                 "reg_text": reg_text or "",
                 "seller_id": int(u.telegram_id),
