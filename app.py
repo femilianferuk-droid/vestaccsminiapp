@@ -145,7 +145,7 @@ BOT_SENDER_ID = 0
 _BOT_AVATAR_PATH = pathlib.Path(__file__).resolve().parent / \
     "Gemini_Generated_Image_w0v6n4w0v6n4w0v6.png"
 
-# Маркер кнопок в тексте сообщений бота. Фронт парсит эти токены и
+# ��аркер кнопок в тексте сообщений бота. Фронт парсит эти токены и
 # рендерит их как настоящие кнопки под ��узырьком. Формат:
 #   [[BTN:<action>|<label>]]            — простая кнопка (например, open_dispute)
 #   [[BTN:<action>:<param>|<label>]]     — кнопка с параметром (например,
@@ -424,11 +424,15 @@ class ChatMessage(Base):
 _db_url = DATABASE_URL or "sqlite:////tmp/vest-account-fallback.db"
 _engine_options = {"pool_pre_ping": True}
 if _db_url.startswith("postgresql"):
+    # psycopg2 игнорирует sslmode в connect_args — нужно прокидывать в URL.
+    # Добавляем ?sslmode=disable только если параметр ещё не задан в URL.
+    if "sslmode=" not in _db_url:
+        _db_url += ("&" if "?" in _db_url else "?") + "sslmode=disable"
     _engine_options.update({
         "pool_size": 5,
         "max_overflow": 10,
         "pool_timeout": 5,
-        "connect_args": {"connect_timeout": 5, "sslmode": "disable"},
+        "connect_args": {"connect_timeout": 5},
     })
 engine = create_engine(_db_url, **_engine_options)
 SessionLocal = scoped_session(sessionmaker(bind=engine, expire_on_commit=False))
@@ -452,7 +456,7 @@ def _ensure_chat_tables():
             checkfirst=True,
         )
     except Exception as _e:
-        # Не валим старт приложения из-за DDL — пусть даже без чатов работает
+        # Не валим старт приложения из-за DDL — пусть даже без чато�� работает
         # (например, если БД ещё не готова или прав нет, бот всё равно поднимет).
         try:
             app.logger.warning("chat tables DDL failed: %s", _e)
@@ -609,7 +613,7 @@ _BOT_INFO_TTL = 60 * 60  # час
 
 # Кеш аватарок пользователей: telegram_id -> {"url": str|None, "ts": float}
 # TTL побольше, потому что photo_url живёт долго (если пользователь
-# сменил фото — обновится само при следующем запросе через TTL).
+# сменил фото — обновится само при следующем запрос�� через TTL).
 _TG_PHOTO_CACHE: dict[int, dict] = {}
 _TG_PHOTO_TTL = 60 * 60 * 6  # 6 часов
 
@@ -984,7 +988,7 @@ _PHONE_PREFIX_COUNTRY = {
     "358": "Финляндия", "359": "Болгария", "370": "Литва", "371": "Латвия",
     "372": "Эстония", "373": "Молдова", "374": "Армения", "375": "Беларусь",
     "376": "Андорра", "377": "Монако", "378": "Сан-Марино",
-    "380": "Украина", "381": "Сербия", "382": "Черногория",
+    "380": "Украина", "381": "Сербия", "382": "Ч��рногория",
     "383": "Косово", "385": "Хорватия", "386": "Словения",
     "387": "Босния и Герцеговина", "389": "Северная Македония",
     "420": "Чехия", "421": "Словакия", "423": "Лихтенштейн",
@@ -1558,7 +1562,7 @@ def api_sell_account_phone_verify(telegram_id, tg_user):
         except (TypeError, ValueError):
             price = 0
         origin = (draft.get("origin") or "").strip() or None
-        # Месяц/год регистрац��и — могут быть null, тогда просто не пишем
+        # Мес��ц/год регистрац��и — могут быть null, тогда просто не пишем
         # в Account (там тоже NULL). Это нормальный случай: продавец
         # не обязан указывать дату регистрации.
         try:
@@ -1815,7 +1819,7 @@ async def _check_spam_bot_async(session_string: str) -> dict:
         ]
         clean_keywords = [
             "ограничений нет", "no limits", "no spam",
-            "good news", "хорошая новость", "не имеет ограничений",
+            "good news", "хорошая новость", "не и��еет ограничений",
         ]
 
         is_spam = any(kw in response_text for kw in spam_keywords)
@@ -5036,7 +5040,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <!-- ====== Публичный профиль пользователя ====== -->
     <div class="page" id="pageUserProfile">
         <section class="public-profile-hero">
-            <button class="profile-back" id="userProfileBack" type="button" aria-label="Назад">
+            <button class="profile-back" id="userProfileBack" type="button" aria-label="Н��зад">
                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                     <path d="M15 5 L8 12 L15 19" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -5242,7 +5246,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             </div>
             <div class="sell-hint">
                 Укажите месяц и год, когда был зарегистрирован этот Telegram-аккаунт.
-                Покупатель увидит «Регистрация: …» в описании объявления.
+                Покупатель увидит «Регистрация: …» в описании объявлени��.
                 Можно ост��вить пустым.
             </div>
 
@@ -6546,7 +6550,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     dom.chatModalAvatar.dataset.peerFirstName = c.peer_first_name || '';
                     dom.chatModalAvatar.dataset.peerUsername   = c.peer_username   || '';
                 }
-                // Аватарка в шапке модалки: сначала буква-фолбэк, при подгрузке
+                // Аватарка в шапке модалки: сначала буква-фолбэ��, при подгрузке
                 // реального фото — заменится на <img> через applyPeerPhotoToEl.
                 if (dom.chatModalAvatar) {
                     dom.chatModalAvatar.innerHTML = '<span class="cma-initial">' + escapeHtml(chatInitial(display)) + '</span>';
@@ -7097,7 +7101,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         av.appendChild(img);
                     };
                     img.onerror = () => {
-                        // если Telegram не отдал фото — остаётся initial
+                        // ес��и Telegram не отдал фото — остаётся initial
                     };
                 }
 
@@ -7182,7 +7186,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 if (price > 50000) return { ok: false, msg: 'Максимальная цена — 50 000₽' };
                 if (!sellState.origin) return { ok: false, msg: 'Выберите происхождение' };
                 // Месяц/год — необязательные. Если оба пустые — ок.
-                // Если указан только один (месяц без года или год без месяца)
+                // Если указан только один (м��сяц без года или год без месяца)
                 // — тоже ок, бэк просто запишет только то, что есть.
                 // Главное — диапазоны валидны (селекты их сами ограничивают,
                 // но защитимся от подмены через devtools).
@@ -7378,7 +7382,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                             sellState.needs2fa = true;
                             const twofaWrap = document.getElementById('sell2faWrap');
                             if (twofaWrap) twofaWrap.style.display = '';
-                            showStep2Error('Аккаунт защищён 2FA. Введите облачный пароль ниже и нажмите «Подтвердить 2FA».');
+                            showStep2Error('Аккаунт защищён 2FA. Введите обл��чный пароль ниже и нажмите «Подтвердить 2FA».');
                             return;
                         }
                         showStep2Error('Ошибка: ' + (r.data?.detail || r.data?.error || r.error || ''));
@@ -7857,7 +7861,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     });
                 }
 
-                // ---- Кнопка «Проверить и опубликовать» (.session режим) ----
+                // ---- Кн��пка «Проверить и опубликовать» (.session режим) ----
                 const filePublishBtn = document.getElementById('sellFilePublishBtn');
                 if (filePublishBtn) filePublishBtn.addEventListener('click', submitSellFile);
             }
@@ -7974,7 +7978,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 'Нигерия': '🇳🇬', 'Кения': '🇰🇪', 'Иран': '🇮🇷',
                 'Саудовская Аравия': '🇸🇦', 'ОАЭ': '🇦🇪',
                 'Таиланд': '🇹🇭', 'Малайзия': '🇲🇾', 'Сингапур': '🇸🇬',
-                'Южная Корея': '🇰🇷', 'Япония': '🇯🇵', 'Китай': '🇨🇳',
+                'Южная Корея': '🇰🇷', 'Япония': '🇯🇵', 'Ки��ай': '🇨🇳',
                 'Австралия': '🇦🇺', 'Канада': '🇨🇦',
                 'Франция': '🇫🇷', 'Италия': '🇮🇹', 'Испания': '🇪🇸',
             };
@@ -10672,7 +10676,7 @@ def api_promo_redeem(telegram_id, tg_user):
     session = SessionLocal()
     try:
         # Блокируем строку промокода, чтобы конкурентные активации не
-        # превысили max_uses (FOR UPDATE через with_for_update).
+        # ��ревысили max_uses (FOR UPDATE через with_for_update).
         promo = session.execute(
             select(PromoCode)
             .where(PromoCode.code == code)
