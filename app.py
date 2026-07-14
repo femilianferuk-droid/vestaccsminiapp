@@ -115,9 +115,9 @@ def _run_async(coro, timeout: Optional[float] = None):
 # Telethon API — ТЕ ЖЕ значения, что и в bot.py (vestaccpunt),
 # чтобы сессия из бота валидировалась в мини-аппе без расхождений.
 API_ID = int(os.getenv("TELEGRAM_API_ID", "32480523"))
-API_HASH = os.getenv("TELEGRAM_API_HASH", "")
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+API_HASH = os.getenv("TELEGRAM_API_HASH", "147839735c9fa4e83451209e9b55cfc5")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8608742695:AAFC8Ea7U7Y23wMM4FCTzu5YPM0AXbYIoZ8")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://bothost_db_d9dbd53f40eb:pa0bg7BK4-HmRor5Fpn3X58gh8kB_0a2OJMIle5kFSQ@node1.pghost.ru:15818/bothost_db_d9dbd53f40eb")
 if "+asyncpg" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("+asyncpg", "")
 SECRET_KEY = os.getenv("FLASK_SECRET", os.urandom(32).hex())
