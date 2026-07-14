@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "pip install -r requirements.txt -q && python app.py",
-    "start": "gunicorn app:app --bind 0.0.0.0:5000 --workers 1 --timeout 120",
-    "build": "pip install -r requirements.txt -q"
+    "dev": ".venv/bin/python app.py",
+    "start": ".venv/bin/gunicorn app:app --bind 0.0.0.0:5000 --workers 1 --timeout 120",
+    "build": "uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt"
   },
   "engines": {
     "node": ">=18"
