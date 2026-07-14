@@ -217,6 +217,11 @@ class Account(Base):
     # «Телеграмм премиум». Не путать с Premium-подпиской у покупателя
     # — это флаг САМОГО аккаунта, который продаётся.
     has_premium = Column(Boolean, default=False, nullable=False)
+    # ====== SPAM STATUS ======
+    # Статус проверки @SpamBot: NULL = не проверен, "clean" = без блока,
+    # "spam" = спам-блок активен. "checking" = проверка в процессе.
+    # Проверка запускается автоматически сразу после выставления аккаунта.
+    spam_status = Column(String(20), nullable=True)
 
 
 class Listing(Base):
@@ -550,6 +555,25 @@ def _ensure_review_is_auto_column():
     except Exception as _e:
         try:
             app.logger.warning("reviews.is_auto migration failed: %s", _e)
+        except Exception:
+            pass
+
+
+def _ensure_account_spam_status_column():
+    """Добавляем колонку accounts.spam_status, если её ещё нет.
+
+    Хранит результат проверки @SpamBot: NULL = не проверен, "checking" =
+    проверяется, "clean" = без спам-блока, "spam" = спам-блок активен.
+    Проверка запускается автоматически после выставления аккаунта.
+    """
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS spam_status VARCHAR(20)"
+            )
+    except Exception as _e:
+        try:
+            app.logger.warning("accounts.spam_status migration failed: %s", _e)
         except Exception:
             pass
 
@@ -1731,6 +1755,172 @@ def api_sell_account_phone_cancel(telegram_id, tg_user):
     return jsonify({"ok": True})
 
 
+# ===== ПРОВЕРКА СПАМ-БЛОКА ЧЕРЕЗ @SpamBot =====
+
+async def _check_spam_bot_async(session_string: str) -> dict:
+    """Заходит на аккаунт через Telethon, пишет /start в @SpamBot,
+    ждёт 4 секунды ответа и анализирует текст.
+
+    Возвращает:
+        {"ok": True, "spam_status": "clean"}   — спам-блока нет
+        {"ok": True, "spam_status": "spam"}    — спам-блок активен
+        {"ok": False, "error": "..."}          — не удалось проверить
+    """
+    if not session_string or len(session_string) < 50:
+        return {"ok": False, "error": "empty_session"}
+
+    client = None
+    try:
+        sess = StringSession(session_string)
+        client = TelegramClient(sess, API_ID, API_HASH)
+        await client.connect()
+        if not await client.is_user_authorized():
+            return {"ok": False, "error": "not_authorized"}
+
+        # Находим @SpamBot и отправляем /start
+        try:
+            spambot = await client.get_entity("@SpamBot")
+        except Exception as e:
+            return {"ok": False, "error": f"cant_find_spambot: {e}"}
+
+        # Сначала читаем историю, чтобы очистить непрочитанные
+        await client.send_message(spambot, "/start")
+
+        # Ждём ответ до 5 секунд (несколько попыток с интервалом 1 сек)
+        response_text = None
+        for _ in range(5):
+            await asyncio.sleep(1)
+            msgs = await client.get_messages(spambot, limit=3)
+            for msg in msgs:
+                # Ищем ответное сообщение от самого @SpamBot (не от нас)
+                if msg and msg.out is False and msg.text:
+                    response_text = msg.text.lower()
+                    break
+            if response_text:
+                break
+
+        if not response_text:
+            return {"ok": False, "error": "no_response"}
+
+        # Анализируем ответ @SpamBot
+        # "Хороших новостей нет" / "no good news" / "limited" — есть блок
+        # "Ограничений нет" / "no limits" / "Good news" — нет блока
+        spam_keywords = [
+            "ограничения", "ограничен", "spam", "limited",
+            "no good news", "нет хороших", "хороших новостей нет",
+            "you are limited", "действуют ограничения",
+        ]
+        clean_keywords = [
+            "ограничений нет", "no limits", "no spam",
+            "good news", "хорошая новость", "не имеет ограничений",
+        ]
+
+        is_spam = any(kw in response_text for kw in spam_keywords)
+        is_clean = any(kw in response_text for kw in clean_keywords)
+
+        if is_clean and not is_spam:
+            return {"ok": True, "spam_status": "clean"}
+        elif is_spam:
+            return {"ok": True, "spam_status": "spam"}
+        else:
+            # Неоднозначный ответ — считаем чистым (не блокируем продажу)
+            return {"ok": True, "spam_status": "clean"}
+
+    except Exception as e:
+        return {"ok": False, "error": f"telethon_error: {str(e)[:100]}"}
+    finally:
+        if client:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+
+def _check_spam_bot(session_string: str) -> dict:
+    """Sync-обёртка для _check_spam_bot_async."""
+    try:
+        return _run_async(_check_spam_bot_async(session_string), timeout=30)
+    except Exception as e:
+        return {"ok": False, "error": f"run_error: {str(e)[:100]}"}
+
+
+@app.route("/api/spam_check", methods=["POST"])
+@require_auth
+def api_spam_check(telegram_id, tg_user):
+    """Проверяет аккаунт продавца на спам-блок через @SpamBot.
+
+    Принимает JSON: {"account_id": <int>}
+    Только владелец объявления может проверить свой аккаунт.
+    Обновляет accounts.spam_status в БД и возвращает результат.
+    """
+    # Ленивая миграция — на случай если колонка ещё не добавлена
+    _ensure_account_spam_status_column()
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        account_id = int(payload.get("account_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "bad_account_id"}), 400
+
+    if not account_id:
+        return jsonify({"ok": False, "error": "missing_account_id"}), 400
+
+    db_sess = SessionLocal()
+    try:
+        account = db_sess.execute(
+            select(Account).where(Account.id == account_id)
+        ).scalar_one_or_none()
+
+        if not account:
+            return jsonify({"ok": False, "error": "account_not_found"}), 404
+
+        # Только владелец может проверить (продавец указан в seller_id)
+        if account.seller_id != telegram_id:
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+
+        session_string = account.session_string
+        if not session_string:
+            return jsonify({"ok": False, "error": "no_session"}), 400
+
+        # Помечаем «проверяется» (оптимистично)
+        account.spam_status = "checking"
+        db_sess.commit()
+    finally:
+        db_sess.close()
+
+    # Запускаем проверку (может занять до 30 сек)
+    result = _check_spam_bot(session_string)
+
+    # Сохраняем результат
+    db_sess2 = SessionLocal()
+    try:
+        account2 = db_sess2.execute(
+            select(Account).where(Account.id == account_id)
+        ).scalar_one_or_none()
+        if account2:
+            if result.get("ok"):
+                account2.spam_status = result["spam_status"]
+            else:
+                # Не удалось проверить — оставим null, чтобы можно было повторить
+                account2.spam_status = None
+            db_sess2.commit()
+    finally:
+        db_sess2.close()
+
+    if not result.get("ok"):
+        return jsonify({
+            "ok": False,
+            "error": result.get("error", "check_failed"),
+            "account_id": account_id,
+        }), 200  # 200 чтобы фронт мог обработать
+
+    return jsonify({
+        "ok": True,
+        "account_id": account_id,
+        "spam_status": result["spam_status"],
+    })
+
+
 @app.route("/api/my_listings")
 @require_auth
 def api_my_listings(telegram_id, tg_user):
@@ -1757,6 +1947,7 @@ def api_my_listings(telegram_id, tg_user):
             reg_year  = acc.reg_year  if acc else None
             items.append({
                 "id": l.id,
+                "account_id": acc.id if acc else None,
                 "title": l.title,
                 "description": build_listing_description(
                     l.description or "", reg_month, reg_year
@@ -1768,6 +1959,7 @@ def api_my_listings(telegram_id, tg_user):
                 "created_at": l.created_at.isoformat() if l.created_at else None,
                 "reg_month": reg_month,
                 "reg_year": reg_year,
+                "spam_status": acc.spam_status if acc else None,
             })
         return jsonify({"ok": True, "items": items})
     finally:
@@ -3133,7 +3325,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         .chat-bubble.mine .chat-bubble-time { color: rgba(255, 255, 255, 0.85); }
 
         /* Нижняя строка пузырька: время + галочки. Галочки показываем
-           ТОЛЬКО для «своих» сообщений (mine). Своих сообщений собеседник
+           Т��ЛЬКО для «своих» сообщений (mine). Своих сообщений собеседник
            не увидит — только наш пузырь. */
         .chat-bubble-foot {
             display: inline-flex;
@@ -3942,6 +4134,56 @@ INDEX_HTML = r"""<!DOCTYPE html>
         .sell-status-pill.active { background: rgba(34, 197, 94, 0.12); color: #15803d; }
         .sell-status-pill.sold { background: rgba(239, 68, 68, 0.12); color: #b91c1c; }
         .sell-status-pill.cancelled { background: rgba(148, 163, 184, 0.18); color: #475569; }
+        /* ===== Spam-статус бейдж ===== */
+        .spam-badge {
+            display: inline-flex; align-items: center; gap: 3px;
+            font-size: 10px; font-weight: 700; padding: 2px 7px;
+            border-radius: 99px; letter-spacing: 0.02em;
+        }
+        .spam-badge.clean {
+            background: rgba(34, 197, 94, 0.13);
+            color: #15803d;
+            border: 1px solid rgba(34, 197, 94, 0.30);
+        }
+        .spam-badge.spam {
+            background: rgba(239, 68, 68, 0.13);
+            color: #b91c1c;
+            border: 1px solid rgba(239, 68, 68, 0.30);
+        }
+        .spam-badge.checking {
+            background: rgba(245, 158, 11, 0.13);
+            color: #b45309;
+            border: 1px solid rgba(245, 158, 11, 0.30);
+        }
+        .spam-badge-dot {
+            width: 5px; height: 5px; border-radius: 50%;
+            display: inline-block; flex-shrink: 0;
+        }
+        .spam-badge.clean .spam-badge-dot { background: #16a34a; }
+        .spam-badge.spam .spam-badge-dot { background: #dc2626; }
+        .spam-badge.checking .spam-badge-dot {
+            background: #d97706;
+            animation: pulse-dot 1.2s ease-in-out infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        /* Строка с инфо о выставлении аккаунта */
+        .sell-listing-progress {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 12px; color: var(--text-muted);
+            padding: 8px 12px; margin-top: 6px;
+            background: rgba(91, 61, 240, 0.05);
+            border-radius: 10px;
+        }
+        .sell-listing-progress .progress-spinner {
+            width: 14px; height: 14px; border-radius: 50%;
+            border: 2px solid rgba(91, 61, 240, 0.2);
+            border-top-color: var(--indigo-600);
+            animation: spin 0.8s linear infinite; flex-shrink: 0;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
         .sell-code-input {
             letter-spacing: 6px;
             text-align: center;
@@ -5926,7 +6168,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             // 1) first_name (например, «Иван»)
             // 2) @username (если имя не известно)
             // 3) id XXX (если ничего нет)
-            // Используется во всех местах: список чатов, заголовок модалки,
+            // Используется во всех места��: список чатов, заголовок модалки,
             // авто-открытие чата после покупки, превью в карточке диалога.
             function peerDisplay(c) {
                 if (!c) return 'Собесе��ник';
@@ -6482,7 +6724,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     return;
                 }
                 // Неизвестное действие — просто сообщим.
-                showToast('Действие пока недоступно', 'info');
+                showToast('Действи�� пока недоступно', 'info');
             }
 
             // Маленькая inline-SVG-галочка. Не зависит от внешних шрифтов.
@@ -7248,9 +7490,67 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     'success'
                 );
                 resetSellForm();
+                // Показываем прогресс-строку и запускаем проверку спама
+                loadMyListings().then(() => {
+                    if (data.account_id) {
+                        _startSpamCheck(data.account_id, data.listing_id);
+                    }
+                });
+                // Переключимся на страницу продажи, чтобы продавец увидел статус
+                setTimeout(() => switchPage('pageSell'), 400);
+            }
+
+            // Запускает проверку спама в фоне и обновляет карточку объявления
+            async function _startSpamCheck(accountId, listingId) {
+                // Показываем «проверяется» в карточке
+                _setSpamBadgeInCard(listingId, 'checking', '⏳ Проверяем спам...');
+
+                try {
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (state.initData) headers['X-Init-Data'] = state.initData;
+
+                    const resp = await fetch('/api/spam_check', {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ account_id: accountId }),
+                    });
+                    const result = await resp.json().catch(() => null);
+
+                    if (result && result.ok) {
+                        if (result.spam_status === 'clean') {
+                            _setSpamBadgeInCard(listingId, 'clean', '✅ Без спамблока');
+                        } else if (result.spam_status === 'spam') {
+                            _setSpamBadgeInCard(listingId, 'spam', '🔴 Спамблок!');
+                        }
+                    } else {
+                        // Не удалось проверить — убираем бейдж
+                        _setSpamBadgeInCard(listingId, '', '');
+                    }
+                } catch (e) {
+                    _setSpamBadgeInCard(listingId, '', '');
+                }
+                // Обновляем весь список после получения результата
                 loadMyListings();
-                // Переключимся обратно на каталог, чтобы продавец увидел результат
-                setTimeout(() => switchPage('pageCatalog'), 800);
+            }
+
+            // Обновляет spam-бейдж в конкретной карточке объявления
+            function _setSpamBadgeInCard(listingId, status, label) {
+                const card = document.querySelector('[data-listing-id="' + listingId + '"]');
+                if (!card) return;
+                let badge = card.querySelector('.spam-badge');
+                if (!status) {
+                    if (badge) badge.remove();
+                    return;
+                }
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.className = 'spam-badge ' + status;
+                    const miSub = card.querySelector('.mi-sub');
+                    if (miSub) miSub.appendChild(badge);
+                } else {
+                    badge.className = 'spam-badge ' + status;
+                }
+                badge.innerHTML = '<span class="spam-badge-dot"></span>' + label;
             }
 
             async function cancelSellFlow() {
@@ -7346,11 +7646,22 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         sold: '🔴 Продано',
                         cancelled: '⚪️ Снято',
                     };
+                    // Вспомогательная функция для spam-бейджа
+                    function _spamBadgeHtml(spamStatus) {
+                        if (!spamStatus || spamStatus === 'checking') {
+                            const lbl = spamStatus === 'checking' ? '⏳ Проверяем...' : '';
+                            const cls = spamStatus === 'checking' ? 'checking' : '';
+                            return cls ? '<span class="spam-badge ' + cls + '"><span class="spam-badge-dot"></span>' + lbl + '</span>' : '';
+                        }
+                        if (spamStatus === 'clean') return '<span class="spam-badge clean"><span class="spam-badge-dot"></span>✅ Без спамблока</span>';
+                        if (spamStatus === 'spam')  return '<span class="spam-badge spam"><span class="spam-badge-dot"></span>🔴 Спамблок!</span>';
+                        return '';
+                    }
                     wrap.innerHTML = items.map((it) => {
                         const status = (it.status || 'active');
                         const date = it.created_at ? it.created_at.slice(0, 10) : '';
                         return (
-                            '<div class="sell-my-item">' +
+                            '<div class="sell-my-item" data-listing-id="' + it.id + '" data-account-id="' + (it.account_id || '') + '">' +
                                 '<div class="mi-row">' +
                                     '<div class="mi-title">' + escapeHtml(it.title) + '</div>' +
                                     '<div class="mi-price">' + Math.round(it.price) + '₽</div>' +
@@ -7360,6 +7671,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                                     '<span>' + escapeHtml(it.country || '—') + '</span>' +
                                     (it.origin ? '<span>· ' + escapeHtml(it.origin) + '</span>' : '') +
                                     (date ? '<span>· ' + date + '</span>' : '') +
+                                    _spamBadgeHtml(it.spam_status) +
                                 '</div>' +
                             '</div>'
                         );
@@ -7625,7 +7937,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             const YEAR_OPTIONS = [];
             for (let y = YEAR_MAX; y >= YEAR_MIN; y--) YEAR_OPTIONS.push(y);
 
-            // Заполняет <select> опциями месяцев/годов (если ещё не заполнен).
+            // Заполняет <select> опц��ями месяцев/годов (если ещё не заполнен).
             function populateDateSelects() {
                 // Месяцы: первые 13 опций (1..12 + 'all')
                 const monthSels = [dom.filterFromMonth, dom.filterToMonth];
@@ -7830,7 +8142,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     card.className = 'card';
                     // ====== Полное имя продавца ======
                     // Полное имя приходит как single field `seller_full_name`
-                    // с бэка (first_name + last_name). Если его нет — фоллбек
+                    // с бэка (first_name + last_name). Если его не�� — фоллбек
                     // на username либо «id XXXX». Рендерим в ОДНУ СТРОКУ,
                     // как просили — не стек из имени + хендла.
                     const fullName = (it.seller_full_name || '').trim();
@@ -8062,7 +8374,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 buyState.item = it;
                 // ====== Шапк�� модалки: название лота (как в карточке) ======
                 // Раньше в шапке модалки дублировалась страна с флагом.
-                // Теперь показываем название лота (listing.title), флаг убран.
+                // Теперь показываем на��вание лота (listing.title), флаг убран.
                 if (dom.itemFlag) dom.itemFlag.style.display = 'none';
                 const lotTitle = (it.title && String(it.title).trim())
                     ? String(it.title).trim()
@@ -9416,7 +9728,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 if (state.origin && state.origin !== 'all') params.set('origin', state.origin);
                 if (state.priceSort && state.priceSort !== 'default') params.set('sort', state.priceSort);
                 // Фильтр по дате создания аккаунта (от и до) — дублируем с loadCatalog(),
-                // чтобы фоновый поллинг каталога тоже у��итывал выбранный диапазон.
+                // чтобы фоновый поллинг каталога тоже у��итывал выб��анный диапазон.
                 if (state.createdFromMonth && state.createdFromMonth !== 'all') params.set('from_month', state.createdFromMonth);
                 if (state.createdFromYear  && state.createdFromYear  !== 'all') params.set('from_year',  state.createdFromYear);
                 if (state.createdToMonth   && state.createdToMonth   !== 'all') params.set('to_month',   state.createdToMonth);
@@ -9463,7 +9775,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             function startApp() {
                 bootstrap().catch(() => {
                     showLoader(false);
-                    renderLoadFailure('Приложение не смогло запуститься. Попробуйте ещё раз.');
+                    renderLoadFailure('Приложение не смогло запуститься. Попроб��йте ещё раз.');
                 });
             }
 
@@ -9817,7 +10129,7 @@ def api_post_review(telegram_id, tg_user):
             return jsonify({"ok": False, "error": "no_seller"}), 400
 
         # listing_id в Review — NOT NULL. Если у покупки нет listing_id,
-        # ищем любой листинг по э��ому аккаунту (как в api_buy) — без
+        # ищ��м любой листинг по э��ому аккаунту (как в api_buy) — без
         # этого INSERT упадёт с NOT NULL violation.
         listing_id = purchase.listing_id
         if not listing_id:
@@ -10208,7 +10520,7 @@ def api_catalog():
             q = q.where(Account.origin == origin)
 
         # Границы диапазона даты создания.
-        # from_date — первое число выбранного месяца (или 1 января, если месяц не указан).
+        # from_date — пер��ое число выбранного месяца (или 1 января, если месяц не указан).
         # to_date   — первое число СЛЕДУЮЩЕГО месяца (исключительно), чтобы весь
         # последний выбранный месяц попал в выборку.
         from datetime import datetime as _dt
@@ -10596,7 +10908,7 @@ def api_buy(telegram_id, tg_user):
                 )
             except Exception as e:
                 # Чат — вспомогательная фича. Если что-то пошло не так
-                # (гонка, нехватка таблицы и т.п.) — НЕ валим покупку,
+                # (гонка, нехватка таблицы и т.п.) — НЕ вал��м покупку,
                 # только логируем.
                 app.logger.warning("Failed to create post-purchase chat: %s", e)
 
@@ -10843,7 +11155,7 @@ def api_user_public(user_telegram_id, telegram_id, tg_user):
     и доступ к ним имеет только сам пользователь через /api/me.
 
     Параметры:
-      user_telegram_id  — telegram_id запрашиваемого пользователя.
+      user_telegram_id  — telegram_id запрашиваемого поль��ователя.
 
     Поля ответа:
       ok                — bool
@@ -11167,7 +11479,7 @@ def _insert_bot_message(session, thread_id: int, text: str, purchase_id: int = N
 
 # ===== ФОНОВЫЙ РЕЛИЗ ХОЛДОВ (24 ЧАСА) =====
 #
-# По правилам P2P-маркетплейса деньги продавца лежат в hold_balance 24 часа
+# По правилам P2P-маркетплейса деньг�� продавца лежат в hold_balance 24 часа
 # после продажи. Через 24 часа бот (здесь — фоновый поток мини-аппа)
 # переводит net_amount на основной баланс продавца и пишет в чат между
 # покупателем и продавцом сообщение «Деньги зачислены продавцу» от
@@ -11529,5 +11841,7 @@ def not_found(e):
 
 
 if __name__ == "__main__":
+    # Запускаем ленивые миграции БД при старте dev-сервера
+    _ensure_account_spam_status_column()
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=os.getenv("FLASK_DEBUG") == "1")
