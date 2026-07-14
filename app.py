@@ -1759,7 +1759,7 @@ def api_sell_account_phone_cancel(telegram_id, tg_user):
 
 async def _check_spam_bot_async(session_string: str) -> dict:
     """Заходит на аккаунт через Telethon, пишет /start в @SpamBot,
-    ждёт 4 секунды ответа и анализирует текст.
+    ждёт 4 секунды о��вета и анализирует текст.
 
     Возвращает:
         {"ok": True, "spam_status": "clean"}   — спам-блока нет
@@ -5127,7 +5127,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             <div class="modal-handle"></div>
             <h3 class="modal-title" id="codeModalTitle">🔐 Код подтверждения</h3>
             <div class="code-modal-body" id="codeModalBody">
-                <div class="code-phone" id="codePhone">—</div>
+                <div class="code-phone" id="codePhone">��</div>
                 <div class="code-big" id="codeValue">—</div>
                 <div class="code-hint">
                     Код действителен ограниченное время.
@@ -6274,7 +6274,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             }
 
             // Ленивая подгрузка фото peer-а через /api/user/<id>/avatar.
-            // Кладёт результат в chatsState.peerPhotos и обновляет ВСЕ видимые
+            // Кладёт результат в chatsState.peerPhotos �� обновляет ВСЕ видимые
             // .chat-card-avatar[data-peer-id="X"] и .chat-modal-avatar (если peer
             // сейчас открыт). Безопасно дёргать много раз — дедуп по inFlight.
             async function ensurePeerPhoto(peerId) {
@@ -8666,7 +8666,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     );
 
                     // Лид-абзац: приоритет — текст продавца, иначе собираем
-                    // живой дефолт. Используем название лота, чтобы текст
+                    // ж��вой дефолт. Используем название лота, чтобы текст
                     // звучал конкретно, а не шаблонно.
                     let leadHtml;
                     if (rawDesc) {
@@ -11423,7 +11423,7 @@ def api_categories():
 def api_chats_list(telegram_id, tg_user):
     """Список чатов текущего пользователя.
 
-    Возвращает диалоги, где он — участник (user1_id ИЛИ user2_id),
+    Возвращает диалоги, где он — у��астник (user1_id ИЛИ user2_id),
     с превью последнего сообщения, ником собеседника и счётчиком непрочитанных.
     Сортировка — свежие сверху (по last_message_at).
     """
@@ -11863,7 +11863,7 @@ def api_bot_avatar():
 # ===== ХЕЛПЕР: ВСТАВИТЬ СООБЩЕНИЕ ОТ «VEST ACCOUNT» В ЧАТ =====
 def _insert_bot_message(session, thread_id: int, text: str, purchase_id: int = None) -> int:
     """Создаёт запись ChatMessage от имени бота (sender_id = BOT_SENDER_ID)
-    в указанном thread-е и обновляет last_message_at потока.
+    в ука��анном thread-е и обновляет last_message_at потока.
 
     Возвращает id созданного сообщения.
     """
