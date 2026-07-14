@@ -972,7 +972,7 @@ _PHONE_PREFIX_COUNTRY = {
     "676": "Тонга", "677": "Соломоновы Острова", "678": "Вануату",
     "679": "Фиджи", "680": "Палау", "681": "Уоллис и Футуна",
     "682": "Острова Кука", "683": "Ниуэ", "685": "Самоа", "686": "Кирибати",
-    "687": "Новая Каледония", "688": "Тувалу", "689": "Французская Полине��ия",
+    "687": "Новая Каледония", "688": "Тув��лу", "689": "Французская Полине��ия",
     "690": "Токелау", "691": "Федеративные Штаты Микронезии",
     "692": "Маршалловы Острова", "850": "КНДР", "852": "Гонконг",
     "853": "Макао", "855": "Камбоджа", "856": "Лаос", "880": "Бангладеш",
@@ -2401,87 +2401,127 @@ INDEX_HTML = r"""<!DOCTYPE html>
         .empty-state .empty-sub { font-size: 13px; margin-top: 6px; color: var(--text-muted); opacity: 0.7; }
 
         /* ====== Мои покупки ====== */
-        .purchases-list { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 32px; }
+        .purchases-list {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+            padding: 4px 16px 32px;
+        }
+
+        /* Карточка покупки — визуально идентична каталожной .card */
         .purchase-card {
-            background: var(--white);
+            background: var(--surface);
             border-radius: 18px;
-            padding: 0;
-            box-shadow: 0 6px 22px rgba(17, 33, 92, 0.08);
-            border: 1px solid var(--gray-100);
-            overflow: hidden;
-            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
-                        box-shadow 0.2s ease;
-            animation: cardIn 0.32s ease-out backwards;
+            padding: 14px 14px 12px;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.03);
+            cursor: pointer;
+            transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
+            display: flex; flex-direction: column; gap: 10px;
             position: relative;
+            border: 1px solid rgba(221, 228, 237, 0.9);
+            animation: cardIn 0.32s ease-out backwards;
         }
         .purchase-card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 12px 32px rgba(17, 33, 92, 0.14);
+            box-shadow: 0 14px 28px rgba(15, 23, 42, 0.10), 0 4px 8px rgba(15, 23, 42, 0.04);
+            border-color: rgba(91, 61, 240, 0.20);
         }
-        .purchase-card-strip {
-            height: 4px;
-            background: linear-gradient(90deg, var(--blue-500), var(--indigo-600), var(--violet-500));
-            background-size: 220% 100%;
-            animation: gradientShift 8s ease infinite;
+        .purchase-card:active { transform: scale(0.985); }
+        .purchase-card.loading { opacity: 0.7; pointer-events: none; }
+
+        /* Верх карточки: название + страна + происхождение */
+        .pcard-top { display: flex; flex-direction: column; gap: 5px; }
+        .pcard-title {
+            font-size: 15.5px; font-weight: 700; color: var(--gray-900);
+            line-height: 1.3; letter-spacing: -0.2px;
+            display: -webkit-box; -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical; overflow: hidden; word-break: break-word;
         }
-        .purchase-card-body { padding: 14px 16px 14px; }
-        .purchase-card-head {
-            display: flex; align-items: center; justify-content: space-between;
-            margin-bottom: 10px; gap: 10px;
+        .pcard-country-line {
+            display: inline-flex; align-items: center; gap: 6px;
+            align-self: flex-start;
+            font-size: 12px; font-weight: 600; color: var(--gray-700);
+            line-height: 1.1; padding: 2px 8px 2px 4px;
+            border-radius: 7px; background: rgba(15, 23, 42, 0.04);
         }
-        .purchase-card-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-        .purchase-flag {
-            width: 42px; height: 42px;
-            border-radius: 12px;
+        .pcard-country-flag {
+            font-size: 14px; line-height: 1;
+            font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;
+        }
+        .pcard-origin {
+            display: inline-flex; align-items: center; gap: 4px;
+            font-size: 11px; background: var(--blue-50); color: var(--blue-700);
+            padding: 3px 8px; border-radius: 7px;
+            font-weight: 600; align-self: flex-start;
+        }
+        /* Мета-бейджи (session, дата) */
+        .pcard-meta { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+        .pcard-meta-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            font-size: 10.5px; font-weight: 600;
+            padding: 3px 8px 3px 6px; border-radius: 999px;
+            white-space: nowrap; line-height: 1;
+        }
+        .pcard-meta-badge.session { background: rgba(22, 163, 74, 0.10); color: #15803d; }
+        .pcard-meta-badge.date    { background: rgba(91, 61, 240, 0.08); color: var(--indigo-600); }
+        .pcard-meta-badge.paid    { background: rgba(15, 23, 42, 0.05); color: var(--gray-700); }
+
+        /* Цена — крупно как в каталоге */
+        .pcard-price {
+            font-size: 22px; font-weight: 800; color: var(--blue-700);
+            margin-top: 2px; display: flex; align-items: baseline; gap: 4px;
+            letter-spacing: -0.5px;
+        }
+        .pcard-price .rub { font-size: 14px; color: var(--text-muted); font-weight: 600; }
+
+        /* Нижняя строка: дата покупки */
+        .pcard-footer {
+            display: flex; align-items: center; gap: 8px;
+            padding-top: 10px; margin-top: auto;
+            border-top: 1px solid rgba(15, 23, 42, 0.06);
+            font-size: 12px; color: var(--text-muted);
+        }
+        .pcard-footer-id { font-weight: 600; color: var(--gray-700); }
+        .pcard-footer-dot { opacity: 0.4; }
+
+        /* ====== Боттом-шит деталей покупки ====== */
+        .pdetail-sheet .modal-sheet { padding-bottom: 28px; }
+        .pdetail-header {
+            display: flex; align-items: center; gap: 14px;
+            padding: 4px 0 16px; border-bottom: 1px solid var(--gray-100); margin-bottom: 16px;
+        }
+        .pdetail-flag {
+            width: 48px; height: 48px; border-radius: 14px;
             background: linear-gradient(135deg, var(--blue-50), var(--blue-100));
             display: flex; align-items: center; justify-content: center;
-            font-size: 22px; line-height: 1;
-            flex-shrink: 0;
-            box-shadow: inset 0 0 0 1px rgba(91, 61, 240, 0.08);
+            font-size: 26px; line-height: 1; flex-shrink: 0;
+            font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;
         }
-        .purchase-phone {
+        .pdetail-info { min-width: 0; }
+        .pdetail-title {
             font-size: 16px; font-weight: 700; color: var(--gray-900);
-            font-variant-numeric: tabular-nums;
-            line-height: 1.2;
+            line-height: 1.3; word-break: break-word;
         }
-        .purchase-id-sub {
-            font-size: 11px; color: var(--text-muted);
-            margin-top: 2px;
+        .pdetail-sub { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+        .pdetail-phone {
+            font-size: 13px; font-weight: 700; color: var(--gray-700);
+            font-variant-numeric: tabular-nums; margin-top: 4px;
+            letter-spacing: 0.3px;
         }
-        .purchase-amount {
-            font-size: 14px; font-weight: 700; color: var(--blue-700);
-            background: var(--blue-50); padding: 5px 11px; border-radius: 999px;
-            flex-shrink: 0;
-        }
-        .purchase-meta {
-            display: flex; gap: 6px; flex-wrap: wrap;
-            font-size: 11.5px; color: var(--gray-500); margin-bottom: 12px;
-        }
-        .purchase-meta .badge {
-            background: var(--gray-50); color: var(--gray-700);
-            padding: 4px 9px; border-radius: 8px;
-            border: 1px solid var(--gray-100);
-            font-weight: 600;
-        }
-        .purchase-actions {
-            display: flex; gap: 8px; flex-wrap: wrap;
-        }
-        .purchase-actions .pur-btn {
-            flex: 1 1 0; min-width: 0;
-            padding: 10px 8px; border-radius: 12px;
-            font-size: 12.5px; font-weight: 600;
+        .pdetail-actions { display: flex; flex-direction: column; gap: 10px; }
+        .pur-btn {
+            width: 100%; padding: 13px 16px; border-radius: 14px;
+            font-size: 14px; font-weight: 600; font-family: inherit;
             border: none; cursor: pointer;
             transition: transform .15s, opacity .15s, box-shadow .15s;
-            display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-            font-family: inherit;
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
         }
-        .purchase-actions .pur-btn:active { transform: scale(0.96); }
+        .pur-btn:active { transform: scale(0.97); }
         .pur-btn.primary {
             background: linear-gradient(135deg, var(--blue-600), var(--blue-700));
-            color: #fff;
-            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.32);
+            color: #fff; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.32);
         }
-        .pur-btn.primary:hover { box-shadow: 0 6px 16px rgba(37, 99, 235, 0.42); }
+        .pur-btn.primary:hover { box-shadow: 0 6px 18px rgba(37, 99, 235, 0.42); }
         .pur-btn.secondary {
             background: var(--gray-100); color: var(--gray-900);
             border: 1px solid var(--gray-200);
@@ -2489,23 +2529,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
         .pur-btn.secondary:hover { background: var(--gray-200); }
         .pur-btn.success {
             background: linear-gradient(135deg, var(--teal-500), #0e9c8c);
-            color: #fff;
-            box-shadow: 0 4px 12px rgba(20, 184, 166, 0.32);
+            color: #fff; box-shadow: 0 4px 12px rgba(20, 184, 166, 0.32);
         }
         .pur-btn.success:hover { box-shadow: 0 6px 16px rgba(20, 184, 166, 0.42); }
-        /* Кнопка «Открыть спор» в карточке покупки — визуально
-           отделена от остальных, чтобы случайно не нажать и не сорвать
-           сделку. Красноватый фон, белый текст, контрастная подсветка. */
         .pur-btn.danger {
             background: linear-gradient(135deg, #ff5a5f, #d9342b);
-            color: #fff;
-            box-shadow: 0 4px 12px rgba(217, 52, 43, 0.30);
-            flex: 1 1 100%;
-            margin-top: 4px;
+            color: #fff; box-shadow: 0 4px 12px rgba(217, 52, 43, 0.30);
         }
         .pur-btn.danger:hover { box-shadow: 0 6px 16px rgba(217, 52, 43, 0.42); }
         .pur-btn:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
-        .purchase-card.loading { opacity: 0.7; pointer-events: none; }
 
         /* ====== Чаты (список диалогов) ====== */
         .chats-list { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 32px; }
@@ -4772,6 +4804,36 @@ INDEX_HTML = r"""<!DOCTYPE html>
         </div>
     </div>
 
+    <!-- ====== Боттом-шит деталей покупки ====== -->
+    <div class="modal hidden pdetail-sheet" id="purchaseDetailModal">
+        <div class="modal-backdrop" data-close="purchaseDetailModal"></div>
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="pdetail-header">
+                <div class="pdetail-flag" id="pdetailFlag">&#x1F30D;</div>
+                <div class="pdetail-info">
+                    <div class="pdetail-title" id="pdetailTitle">Telegram-аккаунт</div>
+                    <div class="pdetail-phone" id="pdetailPhone">—</div>
+                    <div class="pdetail-sub" id="pdetailSub">—</div>
+                </div>
+            </div>
+            <div class="pdetail-actions" id="pdetailActions">
+                <button class="pur-btn primary" id="pdetailCodeBtn">
+                    &#x1F510; Получить код подтверждения
+                </button>
+                <button class="pur-btn secondary" id="pdetailSessionBtn">
+                    &#x1F4C4; Скачать .session файл
+                </button>
+                <button class="pur-btn success" id="pdetailJsonBtn">
+                    &#x7B;&#x7D; Скачать JSON
+                </button>
+                <button class="pur-btn danger" id="pdetailDisputeBtn">
+                    &#x26A0;&#xFE0F; Открыть спор
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- ====== Модалка кода подтверждения ====== -->
     <div class="modal hidden" id="codeModal">
         <div class="modal-backdrop" data-close="codeModal"></div>
@@ -5390,6 +5452,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             const dom = {
                 balancePill: $('balancePill'),
                 headerTopupBtn: $('headerTopupBtn'),
+                purchaseDetailModal: $('purchaseDetailModal'),
                 balanceValue: $('balanceValue'),
                 filterSummary: $('filterSummary'),
                 filterBadge: $('filterBadge'),
@@ -5585,67 +5648,123 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     const card = document.createElement('div');
                     card.className = 'purchase-card';
                     card.dataset.purchaseId = p.id;
-                    const country = p.country || '—';
+                    const country = p.country || '';
                     const flag = flags[country] || '🌍';
                     const date = formatPurchaseDate(p.created_at);
-                    const method = p.payment_method || '—';
                     const hasSession = !!p.has_session;
                     const shortId = '#' + String(p.id).slice(-6);
+                    const lotTitle = (p.title && String(p.title).trim()) ? String(p.title).trim() : 'Telegram-аккаунт';
+
+                    // Строка страны
+                    const countryLineHtml = country
+                        ? `<div class="pcard-country-line"><span class="pcard-country-flag">${escapeHtml(flag)}</span><span>${escapeHtml(country)}</span></div>`
+                        : '';
+
+                    // Происхождение
+                    const ORIGIN_ICONS = { 'Авторег':'🤖', 'Саморег':'👤', 'Фишинг':'🎣', 'Стиллер':'💀' };
+                    const originLabel = p.origin || '';
+                    const originIcon = ORIGIN_ICONS[originLabel] || '📦';
+                    const originHtml = `<span class="pcard-origin">${escapeHtml(originIcon)} ${escapeHtml(originLabel || 'Неизвестно')}</span>`;
+
+                    // Мета-бейджи
+                    const metaBadges = [];
+                    if (hasSession) metaBadges.push(`<span class="pcard-meta-badge session"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4.5" fill="#16a34a" opacity=".18"/><path d="M3 5l1.4 1.4L7 3.5" stroke="#15803d" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Сессия</span>`);
+                    if (date) metaBadges.push(`<span class="pcard-meta-badge date">&#x1F4C5; ${escapeHtml(date)}</span>`);
+                    if (p.payment_method) metaBadges.push(`<span class="pcard-meta-badge paid">${escapeHtml(p.payment_method)}</span>`);
+                    const metaHtml = metaBadges.length ? `<div class="pcard-meta">${metaBadges.join('')}</div>` : '';
 
                     card.innerHTML = `
-                        <div class="purchase-card-strip"></div>
-                        <div class="purchase-card-body">
-                            <div class="purchase-card-head">
-                                <div class="purchase-card-left">
-                                    <div class="purchase-flag">${flag}</div>
-                                    <div>
-                                        <div class="purchase-phone">${escapeHtml(p.phone || '—')}</div>
-                                        <div class="purchase-id-sub">${shortId} · ${escapeHtml(date)}</div>
-                                    </div>
-                                </div>
-                                <div class="purchase-amount">${formatRub(p.amount)} ₽</div>
-                            </div>
-                            <div class="purchase-meta">
-                                <span class="badge">${escapeHtml(country)}</span>
-                                <span class="badge">${escapeHtml(method)}</span>
-                            </div>
-                            <div class="purchase-actions">
-                                <button class="pur-btn primary" data-act="code" ${hasSession ? '' : 'disabled'}>
-                                    🔐 Код
-                                </button>
-                                <button class="pur-btn secondary" data-act="session" ${hasSession ? '' : 'disabled'}>
-                                    📄 .session
-                                </button>
-                                <button class="pur-btn success" data-act="json" ${hasSession ? '' : 'disabled'}>
-                                    { } JSON
-                                </button>
-                                <button class="pur-btn danger" data-act="dispute" title="Если с аккаунтом что-то не так — откройте спор">
-                                    ⚠️ Спор
-                                </button>
-                            </div>
+                        <div class="pcard-top">
+                            <div class="pcard-title">${escapeHtml(lotTitle)}</div>
+                            ${countryLineHtml}
+                            ${originHtml}
+                        </div>
+                        ${metaHtml}
+                        <div class="pcard-price">${formatRub(p.amount)}<span class="rub">&#x20BD;</span></div>
+                        <div class="pcard-footer">
+                            <span class="pcard-footer-id">${escapeHtml(shortId)}</span>
+                            <span class="pcard-footer-dot">·</span>
+                            <span>${escapeHtml(date)}</span>
                         </div>
                     `;
-                    // Обработчики кликов
-                    card.querySelectorAll('.pur-btn').forEach((btn) => {
-                        btn.addEventListener('click', () => {
-                            const act = btn.dataset.act;
-                            if (act === 'code') fetchPurchaseCode(p.id, card);
-                            else if (act === 'session') downloadPurchaseFile(p.id, 'session', card);
-                            else if (act === 'json') downloadPurchaseFile(p.id, 'json', card);
-                            else if (act === 'dispute') {
-                                // Кнопка «Открыть спор» рядом с покупкой —
-                                // сразу открывает модалку поддержки (та же,
-                                // что и кнопка спора из бот-сообщения в чате).
-                                try {
-                                    switchPage('pageCatalog');
-                                } catch (e) { /* noop */ }
-                                if (typeof openSupport === 'function') openSupport();
-                                else showToast('Откройте поддержку через меню', 'info');
-                            }
-                        });
-                    });
+
+                    // Клик по карточке — открыть боттом-шит с деталями
+                    card.addEventListener('click', () => openPurchaseDetail(p));
                     list.appendChild(card);
                 }
+            }
+
+            /* ===== Боттом-шит деталей покупки ===== */
+            const ORIGIN_ICONS_MAP = { 'Авторег':'🤖', 'Саморег':'👤', 'Фишинг':'🎣', 'Стиллер':'💀' };
+            const FLAGS_MAP = {
+                'США':'🇺🇸','Россия':'🇷🇺','Индия':'🇮🇳','Германия':'🇩🇪',
+                'Бразилия':'🇧🇷','Индонезия':'🇮🇩','Казахстан':'🇰🇿',
+                'Украина':'🇺🇦','Беларусь':'🇧🇾','Вьетнам':'🇻🇳',
+                'Филиппины':'🇵🇭','Мьянма':'🇲🇲','Мексика':'🇲🇽',
+                'Турция':'🇹🇷','Польша':'🇵🇱','Великобритания':'🇬🇧',
+                'Аргентина':'🇦🇷',
+            };
+
+            function openPurchaseDetail(p) {
+                const hasSession = !!p.has_session;
+                const flag = FLAGS_MAP[p.country || ''] || '🌍';
+                const lotTitle = (p.title && String(p.title).trim()) ? String(p.title).trim() : 'Telegram-аккаунт';
+                const shortId = '#' + String(p.id).slice(-6);
+                const date = formatPurchaseDate(p.created_at);
+                const originLabel = p.origin || '';
+                const originIcon = ORIGIN_ICONS_MAP[originLabel] || '📦';
+
+                // Заполняем шапку шита
+                const flagEl = document.getElementById('pdetailFlag');
+                const titleEl = document.getElementById('pdetailTitle');
+                const phoneEl = document.getElementById('pdetailPhone');
+                const subEl   = document.getElementById('pdetailSub');
+                if (flagEl)  flagEl.textContent  = flag;
+                if (titleEl) titleEl.textContent = lotTitle;
+                if (phoneEl) phoneEl.textContent = p.phone ? '+' + String(p.phone).replace(/^\+/, '') : '—';
+                if (subEl)   subEl.textContent   = `${shortId} · ${date}${p.country ? ' · ' + p.country : ''}${originLabel ? ' · ' + originIcon + ' ' + originLabel : ''}`;
+
+                // Управляем кнопками
+                const codeBtn    = document.getElementById('pdetailCodeBtn');
+                const sessionBtn = document.getElementById('pdetailSessionBtn');
+                const jsonBtn    = document.getElementById('pdetailJsonBtn');
+                const disputeBtn = document.getElementById('pdetailDisputeBtn');
+
+                if (codeBtn)    codeBtn.disabled    = !hasSession;
+                if (sessionBtn) sessionBtn.disabled = !hasSession;
+                if (jsonBtn)    jsonBtn.disabled     = !hasSession;
+
+                // Перевязываем слушатели (убираем старые клоном)
+                function rebind(el, fn) {
+                    if (!el) return;
+                    const fresh = el.cloneNode(true);
+                    el.parentNode.replaceChild(fresh, el);
+                    fresh.addEventListener('click', fn);
+                }
+                rebind(document.getElementById('pdetailCodeBtn'), () => {
+                    closePurchaseDetail();
+                    fetchPurchaseCode(p.id, null);
+                });
+                rebind(document.getElementById('pdetailSessionBtn'), () => {
+                    closePurchaseDetail();
+                    downloadPurchaseFile(p.id, 'session', null);
+                });
+                rebind(document.getElementById('pdetailJsonBtn'), () => {
+                    closePurchaseDetail();
+                    downloadPurchaseFile(p.id, 'json', null);
+                });
+                rebind(document.getElementById('pdetailDisputeBtn'), () => {
+                    closePurchaseDetail();
+                    try { switchPage('pageCatalog'); } catch (e) {}
+                    if (typeof openSupport === 'function') openSupport();
+                    else showToast('Откройте поддержку через меню', 'info');
+                });
+
+                openModal('purchaseDetailModal');
+            }
+
+            function closePurchaseDetail() {
+                closeModal('purchaseDetailModal');
             }
 
             async function fetchPurchaseCode(purchaseId, card) {
@@ -7790,7 +7909,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
                     // ====== Название лота (lot title) ======
                     // Это `listing.title` с бэка. По новому дизайну именно
-                    // название лота идёт в шапку карточки вместо страны.
+                    // название лота идёт �� шапку карточки вместо страны.
                     // Фоллбек — "Telegram-аккаунт" если продавец не задал
                     // своё название (защита от пустой шапки).
                     const lotTitle = (it.title && String(it.title).trim())
@@ -7854,7 +7973,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             }
 
             function applyFiltersFromModal() {
-                // Считываем выбор из DOM (могли покликать до нажатия «Применить»)
+                // Считываем выбор из DOM (могли покли��ать до нажатия «Применить»)
                 if (dom.filtersCountryGrid) {
                     const sel = dom.filtersCountryGrid.querySelector('.filter-chip.active');
                     state.country = sel ? sel.dataset.country : 'all';
@@ -8300,7 +8419,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         // not_found) — карточка в каталоге уже мертва.
                         // Сразу обновляем каталог и закрываем модалку,
                         // чтобы юзер не кликал по устаревшей кнопке
-                        // «Купить» и не получал ту же ошибку повторно.
+                        // «Купить» и не пол��чал ту же ошибку повторно.
                         if (err === 'already_sold' || err === 'not_found') {
                             try { await loadCatalog(); } catch (e) { /* noop */ }
                             try { await loadCategories(); } catch (e) { /* noop */ }
@@ -9154,7 +9273,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 }
 
                 // ====== Клик по аватару/имени в МОДАЛКЕ ЧАТА ======
-                // Открывает публичный профиль собеседника, не закрывая чат.
+                // Открывает публичный профиль собеседник��, не закрывая чат.
                 // (Пользователь может вернуться кнопкой «Закрыть».)
                 const chatModalEl = document.getElementById('chatModal');
                 if (chatModalEl && !chatModalEl.__peerProfileBound) {
@@ -9698,7 +9817,7 @@ def api_post_review(telegram_id, tg_user):
             return jsonify({"ok": False, "error": "no_seller"}), 400
 
         # listing_id в Review — NOT NULL. Если у покупки нет listing_id,
-        # ищем любой листинг по этому аккаунту (как в api_buy) — без
+        # ищем любой листинг по э��ому аккаунту (как в api_buy) — без
         # этого INSERT упадёт с NOT NULL violation.
         listing_id = purchase.listing_id
         if not listing_id:
@@ -10170,7 +10289,7 @@ def api_catalog():
                 "origin": origin_key,
                 "origin_icon": icon,
                 "origin_label": label,
-                # preview (с маской +***XXXX) больше НЕ отдаём в карточку —
+                # preview (с маской +***XXXX) больше НЕ отдаём в карточ��у —
                 # последние 4 цифры номера в открытом виде не нужны покупателю.
                 # Полный номер он получит после оплаты (страница покупок).
                 "created_at": a.created_at.isoformat() if a.created_at else None,
@@ -10197,7 +10316,7 @@ def api_catalog():
                 "reg_year": a.reg_year,
                 "reg_text": format_reg_info(a.reg_month, a.reg_year) or None,
                 # Флаг верификации сессии. Каталог и так фильтрует только
-                # верифицированные аккаунты, но фронту удобно иметь явный
+                # верифицирован��ые аккаунты, но фронту удобно иметь явный
                 # булеан для бейджа «Сессия верифицирована».
                 "is_verified": bool(getattr(a, "is_verified", False)),
                 # ====== TELEGRAM PREMIUM ======
@@ -10637,7 +10756,7 @@ def api_chats_list(telegram_id, tg_user):
         for tid, cnt in unread_rows:
             unread_counts[tid] = int(cnt or 0)
 
-        # 4) пользователи-собеседники одним запросом
+        # 4) пользователи-собеседники одним за��росом
         peer_ids = set()
         for t in threads:
             peer_ids.add(t.user1_id if t.user2_id == telegram_id else t.user2_id)
@@ -11198,7 +11317,7 @@ def _start_hold_releaser_once():
 # и пишет в чат системное сообщение «Отзыв выставлен автоматически».
 #
 # Безопасность:
-#   - Берём только Purchase у которых created_at <= NOW() - REVIEW_AUTO_POST_DAYS
+#   - Берём только Purchase �� которых created_at <= NOW() - REVIEW_AUTO_POST_DAYS
 #   - и для которых ещё НЕТ Review (LEFT JOIN ... WHERE reviews.id IS NULL)
 #   - SELECT ... FOR UPDATE SKIP LOCKED, чтобы при гонке с bot.py
 #     (если бот когда-то тоже научится) не было дублей.
