@@ -458,7 +458,7 @@ def _ensure_chat_tables():
 def _ensure_user_first_name_column():
     """Добавляем колонки users.first_name / users.last_name, если их ещё нет.
 
-    Нужно для отображения имён собеседников в чате (а не «id XXXX»)
+    Нужно для отображения им��н собеседников в чате (а не «id XXXX»)
     и ПОЛНОГО имени продавца в карточке товара (first_name + last_name).
     Если bot.py уже создал users без этих колонок — без миграции
     SQLAlchemy-модель в app.py будет считать, что поле есть, и любой
@@ -929,9 +929,9 @@ _PHONE_PREFIX_COUNTRY = {
     "45": "Дания", "46": "Швеция", "47": "Норвегия", "48": "Польша",
     "49": "Германия", "51": "Перу", "52": "Мексика", "53": "Куба",
     "54": "Аргентина", "55": "Бразилия", "56": "Чили", "57": "Колумбия",
-    "58": "Венесуэла", "60": "Малайзия", "61": "Австралия", "62": "Индонезия",
+    "58": "Венесуэла", "60": "Малайзия", "61": "Австралия", "62": "��ндонезия",
     "63": "Филиппины", "64": "Новая Зеландия", "65": "Сингапур",
-    "66": "Таиланд", "77": "Казахстан", "81": "Япония", "82": "Южная Корея",
+    "66": "Таиланд", "77": "Казахстан", "81": "Яп��ния", "82": "Южная Корея",
     "84": "Вьетнам", "86": "Китай", "90": "Турция", "91": "Индия",
     "92": "Пакистан", "93": "Афганистан", "94": "Шри-Ланка",
     "95": "Мьянма", "98": "Иран", "211": "Южный Судан", "212": "Марокко",
@@ -4362,9 +4362,22 @@ INDEX_HTML = r"""<!DOCTYPE html>
         }
         @media (min-width: 900px) {
             .catalog-grid { grid-template-columns: 1fr; }
-            body { max-width: 720px; margin: 0 auto; box-shadow: 0 0 60px rgba(0,0,0,0.06); background-color: var(--bg); }
-            
-            .app-header { max-width: 720px; left: 50%; transform: translateX(-50%); width: 100%; }
+            /* Центрируем всё приложение как колонку */
+            body {
+                max-width: 720px;
+                margin: 0 auto;
+                box-shadow: 0 0 80px rgba(0,0,0,0.08);
+                background-color: var(--bg);
+                min-height: 100vh;
+            }
+            /* Шапка течёт в потоке центрированного body — никаких left/transform */
+            .app-header {
+                left: auto;
+                transform: none;
+                width: auto;
+            }
+            /* Боковое меню тоже прибито к правому краю колонки */
+            .side-menu-panel { border-radius: 0; }
         }
         @keyframes cardIn {
             from { opacity: 0; transform: translateY(10px) scale(0.985); }
@@ -4447,14 +4460,101 @@ INDEX_HTML = r"""<!DOCTYPE html>
         .load-failure strong { display: block; font-size: 17px; margin-bottom: 6px; }
         .load-failure p { color: var(--text-muted); margin-bottom: 14px; line-height: 1.5; }
         .load-failure button { border: 0; border-radius: 12px; background: var(--brand); color: #fff; padding: 10px 16px; font-weight: 700; }
+        /* ====== Тёмная тема: сначала системная, затем ручная ====== */
+        /* Базовые переменные тёмной темы вынесены в отдельный набор */
         @media (prefers-color-scheme: dark) {
-            :root { --bg:#0b1220; --surface:#121b2b; --text:#f8fafc; --text-muted:#94a3b8; --gray-50:#172033; --gray-100:#1e293b; --gray-200:#293548; --gray-700:#cbd5e1; --gray-900:#f8fafc; --blue-50:#142448; --blue-100:#1c376d; --blue-900:#dbeafe; }
-            .app-header { background: rgba(18,27,43,.94); }
-            .balance-pill .balance-cur { color: #fff; }
-            .card, .filter-bar { border-color: var(--gray-200); }
+            :root:not([data-theme="light"]) {
+                --bg:#0b1220; --surface:#121b2b; --text:#f8fafc; --text-muted:#94a3b8;
+                --gray-50:#172033; --gray-100:#1e293b; --gray-200:#293548;
+                --gray-700:#cbd5e1; --gray-900:#f8fafc;
+                --blue-50:#142448; --blue-100:#1c376d; --blue-900:#dbeafe;
+            }
+            :root:not([data-theme="light"]) .app-header { background: rgba(18,27,43,.94); }
+            :root:not([data-theme="light"]) .balance-pill .balance-cur { color: #fff; }
+            :root:not([data-theme="light"]) .card, :root:not([data-theme="light"]) .filter-bar { border-color: var(--gray-200); }
         }
+        /* Ручная тёмная тема (переопределяет системную) */
+        [data-theme="dark"] {
+            --bg:#0b1220; --surface:#121b2b; --text:#f8fafc; --text-muted:#94a3b8;
+            --gray-50:#172033; --gray-100:#1e293b; --gray-200:#293548;
+            --gray-700:#cbd5e1; --gray-900:#f8fafc;
+            --blue-50:#142448; --blue-100:#1c376d; --blue-900:#dbeafe;
+        }
+        [data-theme="dark"] .app-header { background: rgba(18,27,43,.94) !important; }
+        [data-theme="dark"] .balance-pill .balance-cur { color: #fff; }
+        [data-theme="dark"] .card, [data-theme="dark"] .filter-bar { border-color: var(--gray-200); }
+        /* Ручная светлая тема (переопределяет системную тёмную) */
+        [data-theme="light"] {
+            --bg:#f5f7fb; --surface:#ffffff; --text:#101828; --text-muted:#667085;
+            --gray-50:#f8fafc; --gray-100:#f1f5f9; --gray-200:#e2e8f0;
+            --gray-700:#344054; --gray-900:#101828;
+            --blue-50:#eff6ff; --blue-100:#dbeafe; --blue-900:#172554;
+        }
+        [data-theme="light"] .app-header { background: rgba(255,255,255,.94) !important; color: var(--text); }
+        [data-theme="light"] .balance-pill .balance-cur { color: #fff; }
+
+        /* ====== Кнопка пополнения (+) рядом с балансом ====== */
+        .topup-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 28px; height: 28px; border-radius: 50%;
+            background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.28);
+            color: inherit; font-size: 18px; font-weight: 700; line-height: 1;
+            cursor: pointer; flex-shrink: 0;
+            transition: background 0.18s, transform 0.14s;
+            font-family: inherit; padding: 0;
+        }
+        .topup-btn:active { transform: scale(0.88); background: rgba(255,255,255,.38); }
+        /* В светлой теме */
+        .app-header:not([style*="gradient"]) .topup-btn,
+        [data-theme="light"] .topup-btn,
+        @media not all { /* fallback */ } {
+        }
+        /* Светлый стиль шапки (2026 redesign) */
+        .topup-btn {
+            background: var(--blue-50, rgba(255,255,255,.22));
+            border-color: var(--blue-100, rgba(255,255,255,.28));
+            color: var(--brand, currentColor);
+        }
+        [data-theme="dark"] .topup-btn,
+        @media (prefers-color-scheme: dark) { /* ничего — переменные сами подхватят */ }
+
+        /* ====== Переключатель темы в боковом меню ====== */
+        .side-menu-theme-row {
+            display: flex; align-items: center;
+            padding: 10px 16px; gap: 10px;
+            border-top: 1px solid var(--gray-100);
+            margin-top: 4px;
+        }
+        .side-menu-theme-label { flex: 1; font-size: 14px; color: var(--text-muted); }
+        .theme-toggle {
+            display: flex; align-items: center;
+            background: var(--gray-100); border-radius: 20px;
+            padding: 2px; gap: 2px; border: none; cursor: pointer;
+            font-family: inherit;
+        }
+        .theme-toggle-opt {
+            display: flex; align-items: center; justify-content: center;
+            width: 32px; height: 28px; border-radius: 16px;
+            font-size: 14px; transition: background 0.18s;
+            flex-shrink: 0;
+        }
+        .theme-toggle-opt.active {
+            background: var(--surface);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+        }
+
         @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; } }
     </style>
+    <!-- Применяем тему до рендера, чтобы избежать мигания (FOUC) -->
+    <script>
+        (function() {
+            try {
+                var t = localStorage.getItem('va_theme');
+                if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+                else if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+            } catch (e) {}
+        })();
+    </script>
 </head>
 <body>
     <!-- ====== Каталог ====== -->
@@ -4467,10 +4567,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 <div class="user-name" id="userName">—</div>
                 <div class="user-meta" id="userMeta">нажмите, чтобы открыть профиль</div>
             </div>
-            <button class="balance-pill" id="balancePill" aria-label="Баланс">
-                <span class="balance-cur">₽</span>
+            <button class="balance-pill" id="balancePill" aria-label="Перейти к профилю">
+                <span class="balance-cur">&#8381;</span>
                 <span id="balanceValue">—</span>
             </button>
+            <button class="topup-btn" id="headerTopupBtn" type="button" aria-label="Пополнить баланс">+</button>
             <button class="burger-btn" id="burgerBtn" type="button" aria-label="Меню" aria-controls="sideMenu" aria-expanded="false">
                 <span></span><span></span><span></span>
             </button>
@@ -5047,7 +5148,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
                     <span class="sm-emoji">❓</span><span class="sm-label">Помощь</span>
                 </button>
                 <button class="side-menu-item" id="sideMenuClose">
-                    <span class="sm-emoji">↩️</span><span class="sm-label">Закрыть меню</span>
+                    <span class="sm-emoji">&#x21A9;&#xFE0F;</span><span class="sm-label">Закрыть меню</span>
+                </button>
+            </div>
+            <!-- Переключатель темы -->
+            <div class="side-menu-theme-row">
+                <span class="side-menu-theme-label">Тема</span>
+                <button class="theme-toggle" id="themeToggle" type="button" aria-label="Переключить тему">
+                    <span class="theme-toggle-opt active" data-theme-val="light" aria-label="Светлая">&#9728;&#65039;</span>
+                    <span class="theme-toggle-opt" data-theme-val="dark" aria-label="Тёмная">&#127765;</span>
+                    <span class="theme-toggle-opt" data-theme-val="auto" aria-label="Системная">&#10036;&#65039;</span>
                 </button>
             </div>
         </aside>
@@ -5279,6 +5389,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             const $ = (id) => document.getElementById(id);
             const dom = {
                 balancePill: $('balancePill'),
+                headerTopupBtn: $('headerTopupBtn'),
                 balanceValue: $('balanceValue'),
                 filterSummary: $('filterSummary'),
                 filterBadge: $('filterBadge'),
@@ -6471,6 +6582,44 @@ INDEX_HTML = r"""<!DOCTYPE html>
             }
 
             /* ===== Боковое меню ===== */
+            /* ===== Тема (светлая / тёмная / авто) ===== */
+            const THEME_KEY = 'va_theme';
+
+            function applyTheme(val) {
+                // val: 'light' | 'dark' | 'auto'
+                const html = document.documentElement;
+                if (val === 'light') {
+                    html.setAttribute('data-theme', 'light');
+                } else if (val === 'dark') {
+                    html.setAttribute('data-theme', 'dark');
+                } else {
+                    // auto — убираем атрибут, работает @media (prefers-color-scheme)
+                    html.removeAttribute('data-theme');
+                }
+                // Обновляем активную опцию в тогглере
+                document.querySelectorAll('.theme-toggle-opt').forEach((el) => {
+                    el.classList.toggle('active', el.dataset.themeVal === val);
+                });
+                // Сохраняем
+                try { localStorage.setItem(THEME_KEY, val); } catch (e) {}
+            }
+
+            function initTheme() {
+                let saved = 'auto';
+                try { saved = localStorage.getItem(THEME_KEY) || 'auto'; } catch (e) {}
+                applyTheme(saved);
+            }
+
+            function bindThemeToggle() {
+                const toggle = document.getElementById('themeToggle');
+                if (!toggle) return;
+                toggle.addEventListener('click', (e) => {
+                    const opt = e.target.closest('.theme-toggle-opt');
+                    if (!opt) return;
+                    applyTheme(opt.dataset.themeVal);
+                });
+            }
+
             function openSideMenu() {
                 if (!dom.sideMenu) return;
                 dom.sideMenu.classList.add('open');
@@ -7310,7 +7459,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
             /* ===== Каталог + Фильтры ===== */
             const COUNTRY_FLAGS_MAP = {
                 'США': '🇺🇸', 'Россия': '🇷🇺', 'Индия': '🇮🇳', 'Германия': '🇩🇪',
-                'Бразилия': '🇧🇷', 'Индонезия': '🇮🇩', 'Казахстан': '🇰🇿',
+                'Бразилия': '🇧🇷', 'Индонезия': '🇮���', 'Казахстан': '🇰🇿',
                 'Украина': '🇺🇦', 'Беларусь': '🇧🇾', 'Вьетнам': '🇻🇳',
                 'Филиппины': '🇵🇭', 'Мьянма': '🇲🇲', 'Мексика': '🇲🇽',
                 'Турция': '🇹🇷', 'Польша': '🇵🇱', 'Великобритания': '🇬🇧',
@@ -7830,7 +7979,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
                 // ====== Полное имя продавца в модалке ======
                 // ОДНОЙ СТРОКОЙ: «Имя Фамилия @username» (ник не переносится
-                // на отдельную строку, как было раньше). Бэк уже склеил имя
+                // на отдельную строку, ка�� было раньше). Бэк уже склеил имя
                 // в `seller_full_name`, при необходимости fallback на handle.
                 const fullName = (it.seller_full_name || '').trim();
                 const sellerHandle = it.seller_username
@@ -8016,7 +8165,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                         }
                         const head = parts.join(' ') + '.';
                         if (verified) {
-                            leadHtml = `${head} Сессия прошла полную проверку, аккаунт готов к выдаче сразу после оплаты. ${premium ? 'Бонусом идёт активный Telegram Premium. ' : ''}Можно заходить и пользоваться без ограничений.`;
+                            leadHtml = `${head} Сессия прошла полную проверку, а��каунт готов к выдаче сразу после оплаты. ${premium ? 'Бонусом идёт активный Telegram Premium. ' : ''}Можно заходить и пользоваться без ограничений.`;
                         } else {
                             leadHtml = `${head} Готов к выдаче после оплаты. По любым вопросам пишите продавцу — он на связи.`;
                         }
@@ -8822,6 +8971,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 // Header balance pill -> profile
                 dom.balancePill.addEventListener('click', openProfile);
 
+                // Кнопка + рядом с балансом -> пополнение
+                if (dom.headerTopupBtn) {
+                    dom.headerTopupBtn.addEventListener('click', openTopup);
+                }
+
                 // Бургер: открыть/закрыть боковое меню
                 dom.burgerBtn.addEventListener('click', () => {
                     const isOpen = dom.sideMenu.classList.contains('open');
@@ -9128,7 +9282,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
                 setInterval(() => {
                     if (document.visibilityState !== 'visible') return;
                     if (state.currentPage !== 'pageCatalog') return;
-                    // Не дёргаем каталог, если юзер прямо сейчас что-то покупает
+                    // Не дёргаем каталог, если юзер прямо ��ейчас что-то покупает
                     if (sellState && sellState.busy) return;
                     silentRefreshCatalog();
                 }, 5000);
@@ -9169,6 +9323,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
             }
 
             async function bootstrap() {
+                initTheme();
+                bindThemeToggle();
                 renderUser();
                 bindEvents();
                 try {
@@ -11192,7 +11348,7 @@ def _post_auto_reviews_sync() -> int:
 
                 posted += 1
             except Exception as e_one:
-                # Один неудачный отзыв не должен валить всю пачку.
+                # ��дин неудачный отзыв не должен валить всю пачку.
                 try:
                     app.logger.warning(
                         "auto-review for purchase %s failed: %s",
